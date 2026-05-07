@@ -1715,3 +1715,62 @@ a {
 
 /* Estilos de grupos movidos para editor.css */
 
+
+/* ─── Chips de arquivos enviados ─────────────────────────────────────────────── */
+#uploaded-files-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+
+.upload-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface, #f7f6f2);
+  font-size: var(--font-size-sm);
+  max-width: 260px;
+  min-width: 0;
+}
+
+.upload-file-banco {
+  color: var(--color-text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.upload-file-name {
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.upload-file-del {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.12s, color 0.12s;
+}
+
+.upload-file-del:hover {
+  background: #e8e7e3;
+  color: var(--color-text);
+}

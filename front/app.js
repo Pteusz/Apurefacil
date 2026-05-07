@@ -80,10 +80,10 @@ async function handleSubmit() {
     resetForm();
     await selectSession(sessao.session_id);
     toast('Apuração criada com sucesso!', 'success');
-    // Abre overlay de validação para o usuário confirmar os lançamentos capturados
-    if (currentSession && Object.keys(currentSession.meses || {}).length > 0) {
-      await openValidationOverlay();
-    }
+    // [DESATIVADO] Modal de confirmação temporariamente desabilitado para reduzir carga de decisão
+    // if (currentSession && Object.keys(currentSession.meses || {}).length > 0) {
+    //   await openValidationOverlay();
+    // }
   } catch (e) {
     await _finalizeProcView(false);
 
@@ -115,10 +115,6 @@ async function handlePdfFiles(files, banco = null) {
       const result = await uploadPdf(file);
       uploadedPdfs.push({ ...result, banco });
     }
-    const total = uploadedPdfs.length;
-    document.getElementById('pdf-label').textContent =
-      total === 1 ? uploadedPdfs[0].filename : `${total} PDFs`;
-    btn.classList.add('has-files');
     renderUploadedFiles();
     toast(files.length === 1 ? 'Arquivo carregado' : `${files.length} arquivos carregados`, 'success');
   } catch (e) {
@@ -142,10 +138,6 @@ async function handlePdfFilesForCapture(files) {
     const result = await uploadPdf(file);
     uploadedPdfs.push({ ...result, banco: null });   // banco será preenchido após captura
 
-    const total = uploadedPdfs.length;
-    document.getElementById('pdf-label').textContent =
-      total === 1 ? result.filename : `${total} PDFs`;
-    btn.classList.add('has-files');
     renderUploadedFiles();
 
     await openPdfEditorForCapture(result.file_id, result.total_pages);
@@ -187,14 +179,6 @@ function renderUploadedFiles() {
     btn.addEventListener('click', () => {
       const key = btn.dataset.banco;
       uploadedPdfs = uploadedPdfs.filter(p => (p.banco || '__sem_banco__') !== key);
-      const total = uploadedPdfs.length;
-      if (total === 0) {
-        document.getElementById('pdf-label').textContent = '+ PDFs';
-        document.getElementById('btn-upload-pdf').classList.remove('has-files');
-      } else {
-        document.getElementById('pdf-label').textContent =
-          total === 1 ? uploadedPdfs[0].filename : `${total} PDFs`;
-      }
       renderUploadedFiles();
     });
   });
