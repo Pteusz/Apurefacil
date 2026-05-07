@@ -26,6 +26,7 @@ from modules.apuracao import (
     parse_date,
     parse_datetime,
     normalizar,
+    agrupar_por_pagador,
     LEVENSHTEIN_THRESHOLD,
 )
 from rapidfuzz import fuzz as _rfuzz
@@ -381,6 +382,7 @@ async def mutate_session(user_id: str, session_id: str, mutation: Dict) -> Dict:
     periodo_inicio = _fmt_mes(chaves[0])  if chaves else "—"
     periodo_fim    = _fmt_mes(chaves[-1]) if chaves else "—"
     laudo_result   = montar_laudo(apuracao_result, titular, periodo_inicio, periodo_fim)
+    laudo_result["fontes"] = _completar_fontes_com_inativos(sessao, laudo_result.get("fontes", []))
 
     return {
         "sessao"  : _session_view(sessao),
@@ -542,6 +544,7 @@ async def calcular_estado(user_id: str, session_id: str) -> Dict:
     periodo_inicio = _fmt_mes(chaves[0])  if chaves else "—"
     periodo_fim    = _fmt_mes(chaves[-1]) if chaves else "—"
     laudo_result   = montar_laudo(apuracao_result, titular, periodo_inicio, periodo_fim)
+    laudo_result["fontes"] = _completar_fontes_com_inativos(sessao, laudo_result.get("fontes", []))
 
     return {
         "sessao"  : _session_view(sessao),
@@ -551,6 +554,62 @@ async def calcular_estado(user_id: str, session_id: str) -> Dict:
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
+
+
+def _completar_fontes_com_inativos(sessao: Dict, fontes_ativas: List[Dict]) -> List[Dict]:
+    """
+    Garante que o resultado sempre contenha todos os grupos da sessão —
+    ativos e inativos. Grupos inativos aparecem com contribuição zero.
+
+    O cálculo (apurar) roda apenas sobre os lançamentos ativos — isso não muda.
+    O que muda é que o resultado final inclui os grupos que existem na sessão
+    mas não participaram da conta, para que a tela os exiba com estado desligado.
+    """
+    grupo_ids_ativos = {f.get("grupo_id", "") for f in fontes_ativas}
+
+    # Coleta entradas inativas (valor > 0, active=False)
+    entradas_inativas = []
+    for mes, lancs in sessao.get("meses", {}).items():
+        for lanc_data in lancs.values():
+            versions = lanc_data.get("versions", [])
+            if not versions:
+                continue
+            state = versions[-1]["state"]
+            valor = state.get("valor", 0) or 0.0
+            if valor <= 0:
+                continue
+            if state.get("active", True):
+                continue
+            entradas_inativas.append({
+                "origem_destino": state.get("descricao") or "",
+                "descricao"     : state.get("descricao") or "",
+            })
+
+    if not entradas_inativas:
+        return fontes_ativas
+
+    # Agrupa pelo mesmo Levenshtein usado em apurar()
+    grupos = agrupar_por_pagador(entradas_inativas)
+
+    fontes_inativas = []
+    for grupo_id, lancs in grupos.items():
+        if grupo_id in grupo_ids_ativos:
+            continue  # já está no resultado ativo
+        # Usa a descrição original (não normalizada) como label do grupo
+        pagador = lancs[0].get("descricao") or grupo_id
+        fontes_inativas.append({
+            "grupo_id"        : grupo_id,
+            "pagador"         : pagador,
+            "renda_base"      : 0.0,
+            "participacao_pct": 0.0,
+            "cv_pct"          : None,
+            "regularidade"    : "0/0",
+            "aparicoes"       : 0,
+            "active"          : False,
+            "faixa_mensal"    : {"min": 0.0, "max": 0.0},
+        })
+
+    return fontes_ativas + fontes_inativas
 
 def _session_view(sessao: Dict) -> Dict:
     """

@@ -360,7 +360,7 @@ function renderSourceCards() {
       <div class="source-card${isSelected ? ' active' : ''}${grupoAtivo ? '' : ' source-card-disabled'}" data-source="${esc(f.pagador)}">
         <div class="source-card-header">
           <span class="source-card-name" title="${esc(f.pagador)}">${esc(f.pagador)}</span>
-          <button class="source-card-toggle${grupoAtivo ? '' : ' source-card-toggle-off'}" data-action="toggle-grupo" data-grupo-id="${esc(f.grupo_id || '')}" data-active="${grupoAtivo ? '0' : '1'}" title="${toggleTitle}">${toggleLabel}</button>
+          <button class="source-card-toggle${grupoAtivo ? '' : ' source-card-toggle-off'}" data-action="toggle-grupo" data-grupo-id="${esc(f.grupo_id || '')}" data-pagador="${esc(f.pagador || '')}" data-active="${grupoAtivo ? '0' : '1'}" title="${toggleTitle}">${toggleLabel}</button>
         </div>
         <span class="source-card-val">${fmtBRL(f.renda_base)}</span>
         <div class="source-card-meta">
@@ -389,12 +389,22 @@ function renderSourceCards() {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const grupo_id = btn.dataset.grupoId;
+      const pagador  = btn.dataset.pagador;
       const active   = btn.dataset.active === '1';
-      btn.disabled = true;
-      btn.textContent = '';
-      const spinner = document.createElement('span');
-      spinner.className = 'source-toggle-spinner';
-      btn.appendChild(spinner);
+
+      // Optimistic update: aplica o toggle localmente antes da resposta do servidor.
+      // O card responde imediatamente; métricas e chips esperam o servidor.
+      if (currentSession?.meses) {
+        for (const lancs of Object.values(currentSession.meses)) {
+          for (const lanc of Object.values(lancs)) {
+            const s = lanc.state;
+            if ((s.valor ?? 0) < 0) continue;
+            if (_sourceMatches(s, pagador)) s.active = active;
+          }
+        }
+        renderSourceCards();
+      }
+
       sendMutation('toggle_grupo', null, { grupo_id, active });
     });
   });
