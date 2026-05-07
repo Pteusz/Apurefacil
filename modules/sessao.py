@@ -382,7 +382,11 @@ async def mutate_session(user_id: str, session_id: str, mutation: Dict) -> Dict:
     periodo_inicio = _fmt_mes(chaves[0])  if chaves else "—"
     periodo_fim    = _fmt_mes(chaves[-1]) if chaves else "—"
     laudo_result   = montar_laudo(apuracao_result, titular, periodo_inicio, periodo_fim)
-    laudo_result["fontes"] = _completar_fontes_com_inativos(sessao, laudo_result.get("fontes", []))
+    laudo_result["fontes"] = _completar_fontes_com_inativos(
+        sessao,
+        laudo_result.get("fontes", []),
+        apuracao_result.get("excluidos", []),
+    )
 
     return {
         "sessao"  : _session_view(sessao),
@@ -544,7 +548,11 @@ async def calcular_estado(user_id: str, session_id: str) -> Dict:
     periodo_inicio = _fmt_mes(chaves[0])  if chaves else "—"
     periodo_fim    = _fmt_mes(chaves[-1]) if chaves else "—"
     laudo_result   = montar_laudo(apuracao_result, titular, periodo_inicio, periodo_fim)
-    laudo_result["fontes"] = _completar_fontes_com_inativos(sessao, laudo_result.get("fontes", []))
+    laudo_result["fontes"] = _completar_fontes_com_inativos(
+        sessao,
+        laudo_result.get("fontes", []),
+        apuracao_result.get("excluidos", []),
+    )
 
     return {
         "sessao"  : _session_view(sessao),
@@ -556,14 +564,18 @@ async def calcular_estado(user_id: str, session_id: str) -> Dict:
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
 
-def _completar_fontes_com_inativos(sessao: Dict, fontes_ativas: List[Dict]) -> List[Dict]:
+def _completar_fontes_com_inativos(
+    sessao: Dict,
+    fontes_ativas: List[Dict],
+    excluidos_sistema: Optional[List[Dict]] = None,
+) -> List[Dict]:
     """
     Garante que o resultado sempre contenha todos os grupos da sessão —
-    ativos e inativos. Grupos inativos aparecem com contribuição zero.
+    ativos, inativos e excluídos pelo sistema. Cada grupo preserva seu estado.
 
     O cálculo (apurar) roda apenas sobre os lançamentos ativos — isso não muda.
-    O que muda é que o resultado final inclui os grupos que existem na sessão
-    mas não participaram da conta, para que a tela os exiba com estado desligado.
+    O resultado final inclui grupos que não participaram da conta para que a
+    tela os exiba com estado desligado ou com o motivo de exclusão do sistema.
     """
     grupo_ids_ativos = {f.get("grupo_id", "") for f in fontes_ativas}
 
@@ -612,7 +624,54 @@ def _completar_fontes_com_inativos(sessao: Dict, fontes_ativas: List[Dict]) -> L
             "faixa_mensal"    : {"min": 0.0, "max": 0.0},
         })
 
-    return fontes_ativas + fontes_inativas
+    # ── Grupos excluídos pelo sistema ────────────────────────────────────────
+    # Distintos dos inativos (active=False pelo usuário): estes têm active=True
+    # mas foram descartados pelo cálculo (auto_transferencia, circular, etc.).
+    # Persistimos os grupo_ids para que o toggle saiba acionar grupos_override.
+    fontes_excluidas_sistema: List[Dict] = []
+    if excluidos_sistema:
+        grupos_override_atual = _resolve_grupos_override(
+            sessao.get("config", {}).get("grupos_override_log", []),
+            sessao.get("config", {}).get("grupos_override"),
+        )
+        # Deduplica por grupo_id, preserva motivo mais representativo
+        vistos: Dict[str, Dict] = {}
+        for ex in excluidos_sistema:
+            gid = ex.get("grupo_id") or normalizar(ex.get("pagador") or "")
+            if not gid or gid in grupo_ids_ativos:
+                continue
+            if gid in {f.get("grupo_id") for f in fontes_inativas}:
+                continue
+            if gid not in vistos:
+                vistos[gid] = {"grupo_id": gid, "pagador": ex.get("pagador") or gid, "motivo": ex.get("motivo") or "desconhecido", "count": 1}
+            else:
+                vistos[gid]["count"] += 1
+
+        # Salva na sessão para que o toggle saiba quais são system_excluded
+        ids_sistema = list(vistos.keys())
+        sessao.setdefault("config", {})["grupos_excluidos_sistema"] = ids_sistema
+
+        cache_disp = sessao.get("config", {}).get("grupos_display_cache", {})
+        for gid, meta in vistos.items():
+            # Se já foi forçado estável pelo usuário, não exibe mais como excluído
+            if grupos_override_atual.get(gid) == "estavel":
+                continue
+            cache = cache_disp.get(gid, {})
+            fontes_excluidas_sistema.append({
+                "grupo_id"        : gid,
+                "pagador"         : meta["pagador"],
+                "renda_base"      : cache.get("renda_base", 0.0),
+                "participacao_pct": 0.0,
+                "cv_pct"          : cache.get("cv_pct"),
+                "regularidade"    : cache.get("regularidade", "0/0"),
+                "aparicoes"       : 0,
+                "active"          : False,
+                "system_excluded" : True,
+                "motivo_exclusao" : meta["motivo"],
+                "faixa_mensal"    : {"min": 0.0, "max": 0.0},
+            })
+
+    return fontes_ativas + fontes_inativas + fontes_excluidas_sistema
 
 def _session_view(sessao: Dict) -> Dict:
     """
@@ -776,6 +835,20 @@ def _apply_toggle_grupo(sessao: Dict, mutation: Dict) -> Dict:
 
     if not grupo_id:
         return sessao
+
+    # Quando o usuário ativa um grupo excluído pelo sistema (auto_transferencia, circular etc.),
+    # adiciona grupos_override='estavel' para que apurar() force a inclusão.
+    # Quando desativa, remove o override (adiciona 'ignorar' ao log) se existia.
+    grupos_excluidos_sistema = sessao.get("config", {}).get("grupos_excluidos_sistema", [])
+    if grupo_id in grupos_excluidos_sistema:
+        log = sessao.setdefault("config", {}).setdefault("grupos_override_log", [])
+        log.append({
+            "v"        : len(log) + 1,
+            "grupo_id" : grupo_id,
+            "flag"     : "estavel" if active else "ignorar",
+            "timestamp": timestamp,
+            "source"   : source,
+        })
 
     # Quando desativa, persiste o cache de exibição (renda_base, cv_pct, regularidade)
     # para que o card continue mostrando os valores da última vez que estava ativo.

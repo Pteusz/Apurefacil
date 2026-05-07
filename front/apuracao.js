@@ -345,23 +345,45 @@ function renderSourceCards() {
 
   if (knownFontes.length === 0) { wrap.innerHTML = ''; return; }
 
+  const MOTIVO_LABEL = {
+    auto_transferencia          : 'auto transferência',
+    auto_investimento           : 'auto investimento',
+    circular                    : 'circular',
+    circular_longitudinal       : 'circular',
+    circular_longitudinal_manual: 'circular',
+    variancia                   : 'variação alta',
+    ruido                       : 'variação alta',
+    sem_historico               : 'sem histórico',
+    flag_usuario                : 'marcado manualmente',
+    duplicado_manual            : 'duplicado',
+  };
+
   wrap.innerHTML = knownFontes.map((f) => {
-    const isSelected  = activeSource === f.pagador;
-    const grupoAtivo  = _grupoIsActive(f.pagador);
-    const barW        = Math.min(Math.max(f.participacao_pct || 0, 0), 100).toFixed(1);
-    const toggleLabel = grupoAtivo ? 'Desativar' : 'Ativar';
-    const toggleTitle = grupoAtivo
+    const isSelected   = activeSource === f.pagador;
+    const grupoAtivo   = _grupoIsActive(f.pagador);
+    const isSysExcl    = !!f.system_excluded;
+    const barW         = Math.min(Math.max(f.participacao_pct || 0, 0), 100).toFixed(1);
+    const toggleLabel  = grupoAtivo ? 'Desativar' : 'Ativar';
+    const toggleTitle  = grupoAtivo
       ? 'Desativar todos os lançamentos deste grupo'
-      : 'Ativar todos os lançamentos deste grupo';
-    const cv = f.cv_pct != null ? Math.round(f.cv_pct) : null;
+      : isSysExcl
+        ? `Forçar inclusão (excluído por: ${MOTIVO_LABEL[f.motivo_exclusao] || f.motivo_exclusao})`
+        : 'Ativar todos os lançamentos deste grupo';
+    const cv       = f.cv_pct != null ? Math.round(f.cv_pct) : null;
     const cvClass  = cv === null ? 'cv-badge--unknown' : cv < 50 ? 'cv-badge--low' : cv <= 80 ? 'cv-badge--mid' : 'cv-badge--high';
     const barClass = cv === null ? '' : cv < 50 ? 'source-card-bar--low' : cv <= 80 ? 'source-card-bar--mid' : 'source-card-bar--high';
+
+    const motivoBadge = isSysExcl && !grupoAtivo
+      ? `<span class="source-excl-badge" title="Excluído automaticamente pelo sistema">excluído · ${esc(MOTIVO_LABEL[f.motivo_exclusao] || f.motivo_exclusao)}</span>`
+      : '';
+
     return `
-      <div class="source-card${isSelected ? ' active' : ''}${grupoAtivo ? '' : ' source-card-disabled'}" data-source="${esc(f.pagador)}">
+      <div class="source-card${isSelected ? ' active' : ''}${grupoAtivo ? '' : ' source-card-disabled'}${isSysExcl && !grupoAtivo ? ' source-card-sys-excl' : ''}" data-source="${esc(f.pagador)}">
         <div class="source-card-header">
           <span class="source-card-name" title="${esc(f.pagador)}">${esc(f.pagador)}</span>
-          <button class="source-card-toggle${grupoAtivo ? '' : ' source-card-toggle-off'}" data-action="toggle-grupo" data-grupo-id="${esc(f.grupo_id || '')}" data-pagador="${esc(f.pagador || '')}" data-active="${grupoAtivo ? '0' : '1'}" title="${toggleTitle}">${toggleLabel}</button>
+          <button class="source-card-toggle${grupoAtivo ? '' : ' source-card-toggle-off'}" data-action="toggle-grupo" data-grupo-id="${esc(f.grupo_id || '')}" data-pagador="${esc(f.pagador || '')}" data-system-excluded="${isSysExcl ? '1' : '0'}" data-active="${grupoAtivo ? '0' : '1'}" title="${toggleTitle}">${toggleLabel}</button>
         </div>
+        ${motivoBadge}
         <span class="source-card-val">${fmtBRL(f.renda_base)}</span>
         <div class="source-card-meta">
           <span class="source-card-regularidade">${f.regularidade ?? ''}</span>
@@ -443,8 +465,9 @@ function renderSourceCards() {
       wrap.style.overflow  = '';
     }
 
+    const hasExcluded = knownFontes.some(f => f.system_excluded && !_grupoIsActive(f.pagador));
     const verMaisBtn = document.createElement('button');
-    verMaisBtn.className   = 'source-ver-mais-btn';
+    verMaisBtn.className   = 'source-ver-mais-btn' + ((!sourcesExpanded && hasExcluded) ? ' has-excluded' : '');
     verMaisBtn.textContent = sourcesExpanded ? 'ver menos' : 'ver mais';
     verMaisBtn.addEventListener('click', () => {
       sourcesExpanded = !sourcesExpanded;

@@ -1841,3 +1841,33 @@
 }
 .val-btn-mismatch:hover { background: var(--color-danger-bg); }
 
+
+/* ─── Cards excluídos pelo sistema ───────────────────────────────────────── */
+.source-card-sys-excl {
+  opacity: 0.38;
+  border-style: dashed;
+  border-color: var(--color-border);
+}
+.source-card-sys-excl:hover { opacity: 0.62; }
+
+/* Badge de motivo de exclusão */
+.source-excl-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: #FFF8ED;
+  color: #A85700;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
+}
+
+/* "Ver mais" quando há excluídos */
+.source-ver-mais-btn.has-excluded::after {
+  content: ' · incl. excluídos';
+  opacity: 0.6;
+}
