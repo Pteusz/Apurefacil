@@ -591,19 +591,22 @@ def _completar_fontes_com_inativos(sessao: Dict, fontes_ativas: List[Dict]) -> L
     # Agrupa pelo mesmo Levenshtein usado em apurar()
     grupos = agrupar_por_pagador(entradas_inativas)
 
+    display_cache = sessao.get("config", {}).get("grupos_display_cache", {})
+
     fontes_inativas = []
     for grupo_id, lancs in grupos.items():
         if grupo_id in grupo_ids_ativos:
             continue  # já está no resultado ativo
         # Usa a descrição original (não normalizada) como label do grupo
         pagador = lancs[0].get("descricao") or grupo_id
+        cache   = display_cache.get(grupo_id, {})
         fontes_inativas.append({
             "grupo_id"        : grupo_id,
             "pagador"         : pagador,
-            "renda_base"      : 0.0,
+            "renda_base"      : cache.get("renda_base", 0.0),
             "participacao_pct": 0.0,
-            "cv_pct"          : None,
-            "regularidade"    : "0/0",
+            "cv_pct"          : cache.get("cv_pct"),
+            "regularidade"    : cache.get("regularidade", "0/0"),
             "aparicoes"       : 0,
             "active"          : False,
             "faixa_mensal"    : {"min": 0.0, "max": 0.0},
@@ -767,11 +770,23 @@ def _apply_toggle_grupo(sessao: Dict, mutation: Dict) -> Dict:
     source    = mutation.get("source", "api")
     timestamp = mutation.get("timestamp") or datetime.now(timezone.utc).isoformat()
 
-    grupo_id = (params.get("grupo_id") or "").strip()
-    active   = bool(params.get("active", True))
+    grupo_id      = (params.get("grupo_id") or "").strip()
+    active        = bool(params.get("active", True))
+    display_cache = params.get("display_cache")  # valores estéticos opcionais
 
     if not grupo_id:
         return sessao
+
+    # Quando desativa, persiste o cache de exibição (renda_base, cv_pct, regularidade)
+    # para que o card continue mostrando os valores da última vez que estava ativo.
+    # Puramente estético — não interfere no cálculo.
+    if not active and display_cache:
+        cache_map = sessao.setdefault("config", {}).setdefault("grupos_display_cache", {})
+        cache_map[grupo_id] = {
+            "renda_base"  : display_cache.get("renda_base"),
+            "cv_pct"      : display_cache.get("cv_pct"),
+            "regularidade": display_cache.get("regularidade"),
+        }
 
     for mes_lancs in sessao.get("meses", {}).values():
         for lanc_id, lanc in mes_lancs.items():

@@ -405,7 +405,15 @@ function renderSourceCards() {
         renderSourceCards();
       }
 
-      sendMutation('toggle_grupo', null, { grupo_id, active });
+      // Quando desativa, envia os valores atuais para cache de exibição
+      const fonte = knownFontes.find(f => f.grupo_id === grupo_id || f.pagador === pagador);
+      const display_cache = (!active && fonte) ? {
+        renda_base  : fonte.renda_base  ?? null,
+        cv_pct      : fonte.cv_pct      ?? null,
+        regularidade: fonte.regularidade ?? null,
+      } : null;
+
+      sendMutation('toggle_grupo', null, { grupo_id, active, display_cache });
     });
   });
 
