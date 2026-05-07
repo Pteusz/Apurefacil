@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — Apurei</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* ── Admin extras ─────────────────────────────────────────────────────── */
+
+    /* Login */
+    .admin-login-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--color-bg);
+      padding: 24px;
+    }
+    .admin-login-card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: var(--shadow-md);
+    }
+    .admin-login-brand {
+      font-size: var(--font-size-sm);
+      font-weight: 600;
+      color: var(--color-text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .admin-login-title {
+      font-size: var(--font-size-xl);
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      margin-bottom: 28px;
+      color: var(--color-text);
+    }
+
+    /* Sidebar brand */
+    .sidebar-brand {
+      padding: 16px 12px 8px;
+      flex-shrink: 0;
+    }
+    .sidebar-brand-label {
+      font-size: var(--font-size-xs);
+      font-weight: 600;
+      color: var(--color-sidebar-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      display: block;
+    }
+    .sidebar-brand-name {
+      font-size: var(--font-size-base);
+      font-weight: 600;
+      color: var(--color-sidebar-text);
+      letter-spacing: -0.01em;
+      margin-top: 2px;
+      display: block;
+    }
+    .sidebar-logout {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: calc(100% - 12px);
+      margin: 4px 6px 10px;
+      padding: 8px 10px;
+      background: transparent;
+      border: none;
+      border-radius: var(--radius-sm);
+      color: var(--color-sidebar-muted);
+      font-size: var(--font-size-sm);
+      font-family: var(--font-sans);
+      text-align: left;
+      cursor: pointer;
+      transition: color 0.12s, background 0.12s;
+    }
+    .sidebar-logout:hover {
+      color: var(--color-sidebar-text);
+      background: var(--color-sidebar-hover);
+    }
+
+    /* Dashboard metrics */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-bottom: 0;
+    }
+    @media (max-width: 700px) { .metrics-grid { grid-template-columns: 1fr; } }
+    .metric-card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: 22px 24px;
+    }
+    .metric-label {
+      font-size: var(--font-size-xs);
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 10px;
+    }
+    .metric-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--color-text);
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+    .metric-sub {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-subtle);
+      margin-top: 6px;
+    }
+
+    /* Admin table */
+    .admin-table-wrap { overflow-x: auto; }
+    .admin-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .admin-table th {
+      font-size: var(--font-size-xs);
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0 12px 12px 0;
+      text-align: left;
+      border-bottom: 1px solid var(--color-border);
+      white-space: nowrap;
+    }
+    .admin-table td {
+      padding: 11px 12px 11px 0;
+      font-size: var(--font-size-sm);
+      color: var(--color-text);
+      border-bottom: 1px solid var(--color-border);
+      vertical-align: middle;
+    }
+    .admin-table tbody tr:last-child td { border-bottom: none; }
+    .admin-table tbody tr:hover td { background: #fafaf8; }
+    .admin-table tbody tr { cursor: default; }
+    .admin-table tbody tr.clickable { cursor: pointer; }
+    .admin-table td.muted { color: var(--color-text-muted); }
+
+    /* Filters row */
+    .filters-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .filters-row input,
+    .filters-row select {
+      padding: 8px 12px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-sm);
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      background: var(--color-surface);
+      outline: none;
+      transition: border-color 0.12s;
+    }
+    .filters-row input:focus,
+    .filters-row select:focus { border-color: var(--color-text); }
+    .filters-row input { flex: 1; min-width: 160px; }
+
+    /* Status badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      font-size: var(--font-size-xs);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .badge-yellow { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+    .badge-green  { background: var(--color-success-bg); border: 1px solid #bbf7d0; color: var(--color-success); }
+    .badge-red    { background: var(--color-danger-bg); border: 1px solid #fecaca; color: var(--color-danger); }
+    .badge-gray   { background: #f3f4f6; border: 1px solid #e5e7eb; color: #6b7280; }
+
+    /* Plan badges */
+    .badge-plan-trial        { background: #f3f4f6; border: 1px solid #e5e7eb; color: #6b7280; }
+    .badge-plan-essencial    { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+    .badge-plan-profissional { background: #f5f3ff; border: 1px solid #ddd6fe; color: #6d28d9; }
+    .badge-plan-escritorio   { background: #fdf4ff; border: 1px solid #f0abfc; color: #86198f; }
+
+    /* Action buttons */
+    .btn-action {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-xs);
+      font-family: var(--font-sans);
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: opacity 0.12s;
+    }
+    .btn-action:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-aprovar  { background: var(--color-success-bg); border-color: #bbf7d0; color: var(--color-success); }
+    .btn-reprovar { background: var(--color-danger-bg);  border-color: #fecaca; color: var(--color-danger); }
+    .btn-aprovar:hover:not(:disabled)  { opacity: 0.75; }
+    .btn-reprovar:hover:not(:disabled) { opacity: 0.75; }
+
+    /* User detail panel */
+    .panel-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.35);
+      z-index: 50;
+      display: flex;
+      align-items: stretch;
+      justify-content: flex-end;
+      animation: fadeOverlay 0.15s ease;
+    }
+    .panel-overlay[hidden] { display: none !important; }
+    .panel-drawer {
+      width: 420px;
+      max-width: 100vw;
+      background: var(--color-surface);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      animation: slideInRight 0.2s ease;
+      box-shadow: var(--shadow-lg);
+    }
+    @keyframes slideInRight {
+      from { transform: translateX(24px); opacity: 0; }
+      to   { transform: translateX(0);    opacity: 1; }
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+    .panel-title {
+      font-size: var(--font-size-md);
+      font-weight: 600;
+      color: var(--color-text);
+      letter-spacing: -0.01em;
+    }
+    .panel-close {
+      background: none;
+      border: none;
+      color: var(--color-text-subtle);
+      padding: 6px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      transition: color 0.12s, background 0.12s;
+    }
+    .panel-close:hover { color: var(--color-text); background: var(--color-border); }
+    .panel-body { padding: 20px 24px; flex: 1; }
+    .panel-section { margin-bottom: 24px; }
+    .panel-section-title {
+      font-size: var(--font-size-xs);
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
+    }
+    .panel-info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--color-border);
+      font-size: var(--font-size-sm);
+    }
+    .panel-info-row:last-child { border-bottom: none; }
+    .panel-info-label { color: var(--color-text-muted); flex-shrink: 0; }
+    .panel-info-value { color: var(--color-text); font-weight: 500; text-align: right; word-break: break-all; }
+
+    /* Config form grid */
+    .config-section-title {
+      font-size: var(--font-size-sm);
+      font-weight: 600;
+      color: var(--color-text);
+      margin: 20px 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .config-section-title:first-child { margin-top: 0; }
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px 20px;
+    }
+    @media (max-width: 600px) { .config-grid { grid-template-columns: 1fr; } }
+    .config-field { display: flex; flex-direction: column; gap: 5px; }
+    .config-field label {
+      font-size: var(--font-size-xs);
+      font-weight: 500;
+      color: var(--color-text-muted);
+    }
+    .config-field input {
+      padding: 9px 12px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-sm);
+      font-family: var(--font-sans);
+      color: var(--color-text);
+      background: var(--color-surface);
+      outline: none;
+      transition: border-color 0.12s;
+    }
+    .config-field input:focus { border-color: var(--color-text); }
+
+    /* Empty state */
+    .table-empty {
+      text-align: center;
+      color: var(--color-text-muted);
+      padding: 40px 0;
+      font-size: var(--font-size-sm);
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Login screen ──────────────────────────────────────────────────────────── -->
+<div id="login-screen" class="admin-login-wrap">
+  <div class="admin-login-card">
+    <div class="admin-login-brand">Apurei</div>
+    <div class="admin-login-title">Painel Admin</div>
+    <input class="field-input" type="email"    id="login-email"    placeholder="E-mail admin"  autocomplete="username"  style="margin-bottom:10px" />
+    <input class="field-input" type="password" id="login-password" placeholder="Senha"         autocomplete="current-password" style="margin-bottom:16px" />
+    <button class="btn-save w-full" id="btn-login" style="width:100%;justify-content:center">Entrar</button>
+    <div class="field-msg error" id="login-error" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- ── Admin panel ───────────────────────────────────────────────────────────── -->
+<div class="layout" id="admin-panel" hidden>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="sidebar-brand-label">Apurei</span>
+      <span class="sidebar-brand-name">Admin</span>
+    </div>
+
+    <span class="sidebar-section-label">Navegação</span>
+
+    <div style="padding: 2px 0; flex:1;">
+      <button class="settings-nav-item" data-tab="dashboard">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/>
+          <rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/>
+          <rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/>
+          <rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.4"/>
+        </svg>
+        Dashboard
+      </button>
+      <button class="settings-nav-item" data-tab="usuarios">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="4.5" r="2.5" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M1.5 12c0-2.485 2.462-4.5 5.5-4.5s5.5 2.015 5.5 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        Usuários
+      </button>
+      <button class="settings-nav-item" data-tab="pagamentos">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <rect x="1" y="3" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M1 6h12" stroke="currentColor" stroke-width="1.4"/>
+        </svg>
+        Pagamentos
+      </button>
+      <button class="settings-nav-item" data-tab="config">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.929 2.929l1.06 1.06M9.01 9.01l1.06 1.06M2.929 11.071l1.06-1.06M9.01 4.99l1.06-1.06" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        Configurações
+      </button>
+    </div>
+
+    <button class="sidebar-logout" id="btn-logout">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M5 2H2.5A1.5 1.5 0 001 3.5v7A1.5 1.5 0 002.5 12H5M9 9.5L12 7l-3-2.5M5 7h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Sair
+    </button>
+  </aside>
+
+  <!-- Main content -->
+  <div class="settings-main">
+
+    <!-- ══ Dashboard ════════════════════════════════════════════════════════ -->
+    <section id="tab-dashboard" hidden>
+      <h1 class="settings-section-title">Dashboard</h1>
+      <div class="metrics-grid" id="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">Total de usuários</div>
+          <div class="metric-value" id="m-total-usuarios">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Usuários ativos</div>
+          <div class="metric-value" id="m-usuarios-ativos">—</div>
+          <div class="metric-sub">Plano diferente de Trial</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Créditos vendidos no mês</div>
+          <div class="metric-value" id="m-creditos-mes">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Receita estimada no mês</div>
+          <div class="metric-value" id="m-receita-mes">—</div>
+          <div class="metric-sub">Pagamentos confirmados</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ Usuários ══════════════════════════════════════════════════════════ -->
+    <section id="tab-usuarios" hidden>
+      <h1 class="settings-section-title">Usuários</h1>
+      <div class="settings-card">
+        <div class="filters-row">
+          <input type="search" id="search-usuarios" placeholder="Buscar por nome ou e-mail…" />
+        </div>
+        <div class="admin-table-wrap">
+          <table class="admin-table" id="usuarios-table">
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>E-mail</th>
+                <th>Plano</th>
+                <th>Créditos</th>
+                <th>Desde</th>
+              </tr>
+            </thead>
+            <tbody id="usuarios-tbody">
+              <tr><td colspan="5" class="table-empty">Carregando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination" id="usuarios-pagination" style="display:none"></div>
+      </div>
+    </section>
+
+    <!-- ══ Pagamentos ════════════════════════════════════════════════════════ -->
+    <section id="tab-pagamentos" hidden>
+      <h1 class="settings-section-title">Pagamentos</h1>
+      <div class="settings-card">
+        <div class="filters-row">
+          <select id="filter-gateway">
+            <option value="all">Todos os gateways</option>
+            <option value="mercadopago">Mercado Pago</option>
+            <option value="infinitypay">InfinityPay</option>
+          </select>
+          <select id="filter-status">
+            <option value="all">Todos os status</option>
+            <option value="pendente">Pendente</option>
+            <option value="confirmado">Confirmado</option>
+            <option value="cancelado">Cancelado</option>
+            <option value="reprovado">Reprovado</option>
+          </select>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Usuário</th>
+                <th>Tipo</th>
+                <th>Valor</th>
+                <th>Gateway</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="pagamentos-tbody">
+              <tr><td colspan="7" class="table-empty">Carregando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination" id="pagamentos-pagination" style="display:none"></div>
+      </div>
+    </section>
+
+    <!-- ══ Configurações ════════════════════════════════════════════════════ -->
+    <section id="tab-config" hidden>
+      <h1 class="settings-section-title">Configurações</h1>
+      <div class="settings-card">
+        <div class="config-section-title">Geral</div>
+        <div class="config-grid" style="grid-template-columns:1fr 1fr;">
+          <div class="config-field">
+            <label for="cfg-bonus_cadastro">Bônus de cadastro (créditos)</label>
+            <input type="number" id="cfg-bonus_cadastro" min="0" />
+          </div>
+        </div>
+
+        <div class="config-section-title">Plano Essencial</div>
+        <div class="config-grid">
+          <div class="config-field">
+            <label for="cfg-plano_essencial_creditos">Créditos/mês</label>
+            <input type="number" id="cfg-plano_essencial_creditos" min="0" />
+          </div>
+          <div class="config-field">
+            <label for="cfg-plano_essencial_preco_mensal">Preço mensal (R$)</label>
+            <input type="number" id="cfg-plano_essencial_preco_mensal" min="0" step="0.01" />
+          </div>
+          <div class="config-field">
+            <label for="cfg-plano_essencial_preco_anual">Preço anual efetivo/mês (R$)</label>
+            <input type="number" id="cfg-plano_essencial_preco_anual" min="0" step="0.01" />
+          </div>
+          <div class="config-field">
+            <label for="cfg-plano_essencial_preco_avulso">Preço crédito avulso (R$)</label>
+            <input type="number" id="cfg-plano_essencial_preco_avulso" min="0" step="0.01" />
+          </div>
+        </div>
+
+        <div class="config-section-title">Plano Profissional</div>
+        <div class="config-grid">
+          <div class="config-field">
+            <label for="cfg-plano_profissional_creditos">Créditos/mês</label>
+            <input type="number" id="cfg-plano_profissional_creditos" min="0" />
+          </div>
+          <div class="config-field">
+            <label for="cfg-plano_profissional_preco_mensal">Preço mensal (R$)</label>
+            <input type="number" id="cfg-plano_profissional_preco_mensal" min="0" step="0.01" />
+          </div>
+          <div class="config-field">
+            <label for="cfg-plano_profissional_preco_anual">Preço anual efetivo/mês (R$)</label>
+            <input type="number" id="cfg-plano_profissional_preco_anual" min="0" step="0.01" />
+          </div>
+          <div class="config-field">
+            <label for="cfg-plano_profissional_preco_avulso">Preço crédito avulso (R$)</label>
+            <input type="number" id="cfg-plano_profissional_preco_avulso" min="0" step="0.01" />
+          </div>
+        </div>
+
+        <div class="config-section-title">Plano Escritório</div>
+        <div class="config-grid">
+          <div class="config-field">
+            <label for="cfg-plano_escritorio_creditos">Créditos/mês</label>
+            <input type="number" id="cfg-plano_escritorio_creditos" min="0" />
+          </div>
+          <div class="config-field">
+            <label for="cfg-plano_escritorio_preco_mensal">Preço mensal (R$)</label>
+            <input type="number" id="cfg-plano_escritorio_preco_mensal" min="0" step="0.01" />
+          </div>
+          <div class="config-field">
+            <label for="cfg-plano_escritorio_preco_anual">Preço anual efetivo/mês (R$)</label>
+            <input type="number" id="cfg-plano_escritorio_preco_anual" min="0" step="0.01" />
+          </div>
+          <div class="config-field">
+            <label for="cfg-plano_escritorio_preco_avulso">Preço crédito avulso (R$)</label>
+            <input type="number" id="cfg-plano_escritorio_preco_avulso" min="0" step="0.01" />
+          </div>
+        </div>
+
+        <div class="config-section-title">Créditos Avulsos</div>
+        <div class="config-grid">
+          <div class="config-field">
+            <label for="cfg-avulso_quantidade">Créditos por pacote</label>
+            <input type="number" id="cfg-avulso_quantidade" min="1" />
+          </div>
+          <div class="config-field">
+            <label for="cfg-avulso_preco">Preço do pacote (R$)</label>
+            <input type="number" id="cfg-avulso_preco" min="0" step="0.01" />
+          </div>
+        </div>
+
+        <div class="field-actions" style="margin-top:24px">
+          <button class="btn-save" id="btn-save-config">Salvar configurações</button>
+          <div class="field-msg" id="msg-config"></div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /settings-main -->
+</div><!-- /layout -->
+
+<!-- ── User detail panel ─────────────────────────────────────────────────────── -->
+<div id="user-panel-overlay" class="panel-overlay" hidden>
+  <div class="panel-drawer">
+    <div class="panel-header">
+      <div class="panel-title" id="panel-user-name">Usuário</div>
+      <button class="panel-close" id="btn-close-panel" aria-label="Fechar">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.6"
+                stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <div class="panel-body">
+
+      <!-- Info -->
+      <div class="panel-section">
+        <div class="panel-section-title">Dados</div>
+        <div id="panel-info-rows"></div>
+      </div>
+
+      <!-- Créditos -->
+      <div class="panel-section">
+        <div class="panel-section-title">Ajustar créditos</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input class="field-input" type="number" id="panel-creditos-delta"
+                 placeholder="Ex: +10 ou -5" style="flex:1;min-width:100px" />
+          <input class="field-input" type="text"   id="panel-creditos-motivo"
+                 placeholder="Motivo" style="flex:2;min-width:140px" />
+          <button class="btn-save" id="btn-panel-creditos">Aplicar</button>
+        </div>
+        <div class="field-msg" id="msg-panel-creditos" style="margin-top:6px"></div>
+      </div>
+
+      <!-- Plano -->
+      <div class="panel-section">
+        <div class="panel-section-title">Alterar plano</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select class="field-input" id="panel-plano-select" style="flex:1">
+            <option value="trial">Trial</option>
+            <option value="essencial">Essencial</option>
+            <option value="profissional">Profissional</option>
+            <option value="escritorio">Escritório</option>
+          </select>
+          <button class="btn-save" id="btn-panel-plano">Salvar plano</button>
+        </div>
+        <div class="field-msg" id="msg-panel-plano" style="margin-top:6px"></div>
+      </div>
+
+      <!-- Histórico de créditos -->
+      <div class="panel-section">
+        <div class="panel-section-title">Últimas movimentações de crédito</div>
+        <div id="panel-extrato">
+          <div class="table-empty">Carregando…</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+<!-- ── JavaScript ─────────────────────────────────────────────────────────────── -->
+<script type="module">
+
+// ─── Config ────────────────────────────────────────────────────────────────────
+const IS_LOCAL = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const API_BASE = IS_LOCAL ? '' : 'https://backend.estabilizei.com.br';
+
+// ─── Token (sessionStorage — expira ao fechar o browser) ──────────────────────
+const getToken   = ()  => sessionStorage.getItem('est_admin_token');
+const setToken   = t   => sessionStorage.setItem('est_admin_token', t);
+const clearToken = ()  => sessionStorage.removeItem('est_admin_token');
+
+// ─── API ───────────────────────────────────────────────────────────────────────
+async function api(method, path, body = null) {
+  const headers = {};
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (body)  headers['Content-Type']  = 'application/json';
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : null,
+  });
+
+  if (res.status === 401) {
+    clearToken();
+    showLogin();
+    throw new Error('Sessão expirada');
+  }
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Erro ${res.status}`);
+  }
+  return res.json();
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = String(s ?? '');
+  return d.innerHTML;
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString('pt-BR', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    });
+  } catch { return iso; }
+}
+
+function fmtMoney(v) {
+  return 'R$' + Number(v || 0).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
+}
+
+function capitalize(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+}
+
+function toast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = `toast${type ? ` ${type}` : ''}`;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3600);
+}
+
+function setMsg(id, text, type = 'error') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = `field-msg ${type}`;
+}
+function clearMsg(id) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = ''; el.className = 'field-msg'; }
+}
+
+function planBadge(plano) {
+  const cls = `badge badge-plan-${plano || 'trial'}`;
+  return `<span class="${cls}">${capitalize(plano || 'trial')}</span>`;
+}
+
+function statusBadge(status) {
+  const map = {
+    pendente:   'badge-yellow',
+    confirmado: 'badge-green',
+    cancelado:  'badge-red',
+    reprovado:  'badge-red',
+    erro_criacao: 'badge-red',
+  };
+  return `<span class="badge ${map[status] || 'badge-gray'}">${esc(status)}</span>`;
+}
+
+function renderPagination(containerId, page, total, limit, onPage) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const totalPages = Math.ceil(total / limit);
+  if (totalPages <= 1) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = `
+    <button class="pagination-btn" id="${containerId}-prev" ${page <= 1 ? 'disabled' : ''}>← Anterior</button>
+    <span class="pagination-info">Página ${page} de ${totalPages} (${total} itens)</span>
+    <button class="pagination-btn" id="${containerId}-next" ${page >= totalPages ? 'disabled' : ''}>Próxima →</button>
+  `;
+  document.getElementById(`${containerId}-prev`)?.addEventListener('click', () => onPage(page - 1));
+  document.getElementById(`${containerId}-next`)?.addEventListener('click', () => onPage(page + 1));
+}
+
+// ─── Login / Logout ────────────────────────────────────────────────────────────
+function showLogin() {
+  document.getElementById('login-screen').hidden  = false;
+  document.getElementById('admin-panel').hidden   = true;
+}
+function showPanel() {
+  document.getElementById('login-screen').hidden  = true;
+  document.getElementById('admin-panel').hidden   = false;
+}
+
+document.getElementById('btn-login').addEventListener('click', async () => {
+  const btn      = document.getElementById('btn-login');
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+
+  document.getElementById('login-error').textContent = '';
+  if (!email || !password) {
+    document.getElementById('login-error').textContent = 'Informe e-mail e senha.';
+    return;
+  }
+
+  btn.disabled    = true;
+  btn.textContent = 'Entrando…';
+  try {
+    const data = await api('POST', '/admin/login', { email, password });
+    setToken(data.token);
+    showPanel();
+    showTab('dashboard');
+    loadDashboard();
+  } catch (e) {
+    document.getElementById('login-error').textContent = e.message || 'Credenciais inválidas';
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Entrar';
+  }
+});
+
+document.getElementById('login-password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-login').click();
+});
+
+document.getElementById('btn-logout').addEventListener('click', () => {
+  clearToken();
+  showLogin();
+});
+
+// ─── Tab navigation ────────────────────────────────────────────────────────────
+const TABS = ['dashboard', 'usuarios', 'pagamentos', 'config'];
+
+function showTab(tab) {
+  if (!TABS.includes(tab)) tab = 'dashboard';
+  TABS.forEach(t => {
+    document.getElementById(`tab-${t}`).hidden = t !== tab;
+  });
+  document.querySelectorAll('.settings-nav-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  history.replaceState(null, '', `#${tab}`);
+
+  if (tab === 'usuarios'   && !_usuariosLoaded)   { loadUsuarios(); }
+  if (tab === 'pagamentos' && !_pagamentosLoaded)  { loadPagamentos(); }
+  if (tab === 'config'     && !_configLoaded)      { loadConfig(); }
+}
+
+document.querySelectorAll('.settings-nav-item').forEach(btn => {
+  btn.addEventListener('click', () => showTab(btn.dataset.tab));
+});
+
+// ─── Dashboard ─────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const d = await api('GET', '/admin/dashboard');
+    document.getElementById('m-total-usuarios').textContent  = d.total_usuarios;
+    document.getElementById('m-usuarios-ativos').textContent = d.usuarios_ativos;
+    document.getElementById('m-creditos-mes').textContent    = d.creditos_vendidos_mes;
+    document.getElementById('m-receita-mes').textContent     = fmtMoney(d.receita_estimada_mes);
+  } catch (e) {
+    toast('Erro ao carregar dashboard: ' + e.message, 'error');
+  }
+}
+
+// ─── Usuários ──────────────────────────────────────────────────────────────────
+let _usuariosLoaded = false;
+let _usuariosPage   = 1;
+let _usuariosSearch = '';
+const USUARIOS_LIMIT = 20;
+
+async function loadUsuarios(page = 1, search = _usuariosSearch) {
+  _usuariosLoaded = true;
+  _usuariosPage   = page;
+  _usuariosSearch = search;
+
+  const tbody = document.getElementById('usuarios-tbody');
+  tbody.innerHTML = `<tr><td colspan="5" class="table-empty">Carregando…</td></tr>`;
+
+  try {
+    const params = new URLSearchParams({ page, limit: USUARIOS_LIMIT, search });
+    const data   = await api('GET', `/admin/usuarios?${params}`);
+    renderUsuariosTable(data);
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="table-empty">${esc(e.message)}</td></tr>`;
+  }
+}
+
+function renderUsuariosTable({ items, total, page }) {
+  const tbody = document.getElementById('usuarios-tbody');
+  if (!items || items.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="table-empty">Nenhum usuário encontrado.</td></tr>`;
+    document.getElementById('usuarios-pagination').style.display = 'none';
+    return;
+  }
+  tbody.innerHTML = items.map(u => `
+    <tr class="clickable" data-uid="${esc(u.id)}">
+      <td>${esc(u.nome || '—')}</td>
+      <td class="muted">${esc(u.email)}</td>
+      <td>${planBadge(u.plano)}</td>
+      <td>${u.creditos}</td>
+      <td class="muted">${fmtDate(u.created_at)}</td>
+    </tr>
+  `).join('');
+
+  tbody.querySelectorAll('tr[data-uid]').forEach(tr => {
+    tr.addEventListener('click', () => openUserPanel(tr.dataset.uid));
+  });
+
+  renderPagination('usuarios-pagination', page, total, USUARIOS_LIMIT, p => loadUsuarios(p));
+}
+
+// Search debounce
+let _searchTimer;
+document.getElementById('search-usuarios').addEventListener('input', e => {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => loadUsuarios(1, e.target.value.trim()), 350);
+});
+
+// ─── User panel ────────────────────────────────────────────────────────────────
+let _currentUserId = null;
+
+async function openUserPanel(userId) {
+  _currentUserId = userId;
+  document.getElementById('user-panel-overlay').hidden = false;
+  document.getElementById('panel-user-name').textContent   = 'Carregando…';
+  document.getElementById('panel-info-rows').innerHTML      = '';
+  document.getElementById('panel-extrato').innerHTML        = '<div class="table-empty">Carregando…</div>';
+  clearMsg('msg-panel-creditos');
+  clearMsg('msg-panel-plano');
+
+  try {
+    const u = await api('GET', `/admin/usuarios/${userId}`);
+    document.getElementById('panel-user-name').textContent = u.nome || u.email;
+    document.getElementById('panel-plano-select').value    = u.plano || 'trial';
+
+    document.getElementById('panel-info-rows').innerHTML = `
+      <div class="panel-info-row">
+        <span class="panel-info-label">E-mail</span>
+        <span class="panel-info-value">${esc(u.email)}</span>
+      </div>
+      <div class="panel-info-row">
+        <span class="panel-info-label">Plano</span>
+        <span class="panel-info-value">${planBadge(u.plano)}</span>
+      </div>
+      <div class="panel-info-row">
+        <span class="panel-info-label">Créditos</span>
+        <span class="panel-info-value">${u.creditos}</span>
+      </div>
+      <div class="panel-info-row">
+        <span class="panel-info-label">Renovação</span>
+        <span class="panel-info-value">${fmtDate(u.plano_renovacao) || '—'}</span>
+      </div>
+      <div class="panel-info-row">
+        <span class="panel-info-label">Cadastro</span>
+        <span class="panel-info-value">${fmtDate(u.created_at)}</span>
+      </div>
+    `;
+
+    renderExtrato(u.extrato || []);
+  } catch (e) {
+    document.getElementById('panel-user-name').textContent = 'Erro';
+    toast('Erro ao carregar usuário: ' + e.message, 'error');
+  }
+}
+
+function renderExtrato(extrato) {
+  const el = document.getElementById('panel-extrato');
+  if (!extrato.length) {
+    el.innerHTML = '<div class="table-empty" style="padding:16px 0">Nenhuma movimentação.</div>';
+    return;
+  }
+  el.innerHTML = `
+    <table class="finance-table">
+      <thead><tr><th>Data</th><th>Descrição</th><th style="text-align:right">Créditos</th></tr></thead>
+      <tbody>
+        ${extrato.map(t => {
+          const cls  = t.delta >= 0 ? 'delta-positive' : 'delta-negative';
+          const sign = t.delta >= 0 ? '+' : '';
+          return `<tr>
+            <td>${fmtDate(t.created_at)}</td>
+            <td>${esc(t.motivo)}</td>
+            <td class="${cls}" style="text-align:right">${sign}${t.delta}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+document.getElementById('btn-close-panel').addEventListener('click', () => {
+  document.getElementById('user-panel-overlay').hidden = true;
+  _currentUserId = null;
+});
+document.getElementById('user-panel-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) {
+    document.getElementById('user-panel-overlay').hidden = true;
+    _currentUserId = null;
+  }
+});
+
+// Créditos
+document.getElementById('btn-panel-creditos').addEventListener('click', async () => {
+  if (!_currentUserId) return;
+  const delta  = parseInt(document.getElementById('panel-creditos-delta').value);
+  const motivo = document.getElementById('panel-creditos-motivo').value.trim();
+  clearMsg('msg-panel-creditos');
+
+  if (!delta || isNaN(delta)) { setMsg('msg-panel-creditos', 'Informe um delta válido (ex: 10 ou -5)'); return; }
+  if (!motivo)                { setMsg('msg-panel-creditos', 'Informe o motivo'); return; }
+
+  const btn = document.getElementById('btn-panel-creditos');
+  btn.disabled = true;
+  try {
+    await api('POST', `/admin/usuarios/${_currentUserId}/creditos`, { delta, motivo });
+    setMsg('msg-panel-creditos', 'Créditos atualizados.', 'success');
+    document.getElementById('panel-creditos-delta').value  = '';
+    document.getElementById('panel-creditos-motivo').value = '';
+    // Recarrega painel e tabela
+    await openUserPanel(_currentUserId);
+    loadUsuarios(_usuariosPage);
+  } catch (e) {
+    setMsg('msg-panel-creditos', e.message || 'Erro ao ajustar créditos');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Plano
+document.getElementById('btn-panel-plano').addEventListener('click', async () => {
+  if (!_currentUserId) return;
+  const plano = document.getElementById('panel-plano-select').value;
+  clearMsg('msg-panel-plano');
+
+  const btn = document.getElementById('btn-panel-plano');
+  btn.disabled = true;
+  try {
+    await api('PATCH', `/admin/usuarios/${_currentUserId}/plano`, { plano });
+    setMsg('msg-panel-plano', 'Plano atualizado.', 'success');
+    await openUserPanel(_currentUserId);
+    loadUsuarios(_usuariosPage);
+  } catch (e) {
+    setMsg('msg-panel-plano', e.message || 'Erro ao alterar plano');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ─── Pagamentos ────────────────────────────────────────────────────────────────
+let _pagamentosLoaded  = false;
+let _pagamentosPage    = 1;
+const PAGAMENTOS_LIMIT = 20;
+
+async function loadPagamentos(page = 1) {
+  _pagamentosLoaded = true;
+  _pagamentosPage   = page;
+  const tbody = document.getElementById('pagamentos-tbody');
+  tbody.innerHTML = `<tr><td colspan="7" class="table-empty">Carregando…</td></tr>`;
+
+  const gateway = document.getElementById('filter-gateway').value;
+  const status  = document.getElementById('filter-status').value;
+
+  try {
+    const params = new URLSearchParams({ page, limit: PAGAMENTOS_LIMIT, gateway, status });
+    const data   = await api('GET', `/admin/pagamentos?${params}`);
+    renderPagamentosTable(data);
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="table-empty">${esc(e.message)}</td></tr>`;
+  }
+}
+
+function renderPagamentosTable({ items, total, page }) {
+  const tbody = document.getElementById('pagamentos-tbody');
+  if (!items || items.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="table-empty">Nenhum pagamento encontrado.</td></tr>`;
+    document.getElementById('pagamentos-pagination').style.display = 'none';
+    return;
+  }
+  tbody.innerHTML = items.map(p => {
+    const isPendente = p.status === 'pendente';
+    const acoes = isPendente ? `
+      <button class="btn-action btn-aprovar"  data-pid="${esc(p.id)}" data-action="aprovar">Aprovar</button>
+      <button class="btn-action btn-reprovar" data-pid="${esc(p.id)}" data-action="reprovar" style="margin-left:4px">Reprovar</button>
+    ` : '';
+    return `
+      <tr>
+        <td class="muted" style="white-space:nowrap">${fmtDate(p.created_at)}</td>
+        <td>
+          <div style="font-size:var(--font-size-sm)">${esc(p.user_nome || '—')}</div>
+          <div style="font-size:var(--font-size-xs);color:var(--color-text-muted)">${esc(p.user_email || '')}</div>
+        </td>
+        <td class="muted" style="font-size:var(--font-size-xs)">${esc(p.tipo)}</td>
+        <td style="white-space:nowrap">${fmtMoney(p.valor)}</td>
+        <td class="muted">${esc(p.gateway || '—')}</td>
+        <td>${statusBadge(p.status)}</td>
+        <td style="white-space:nowrap">${acoes}</td>
+      </tr>
+    `;
+  }).join('');
+
+  // Bind action buttons
+  tbody.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => handlePagamentoAction(btn.dataset.pid, btn.dataset.action, btn));
+  });
+
+  renderPagination('pagamentos-pagination', page, total, PAGAMENTOS_LIMIT, p => loadPagamentos(p));
+}
+
+async function handlePagamentoAction(pagamentoId, action, btn) {
+  btn.disabled = true;
+  try {
+    await api('POST', `/admin/pagamentos/${pagamentoId}/${action}`);
+    toast(action === 'aprovar' ? 'Pagamento aprovado.' : 'Pagamento reprovado.', 'success');
+    loadPagamentos(_pagamentosPage);
+  } catch (e) {
+    toast(e.message || 'Erro ao processar ação', 'error');
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('filter-gateway').addEventListener('change', () => loadPagamentos(1));
+document.getElementById('filter-status').addEventListener('change',  () => loadPagamentos(1));
+
+// ─── Config ────────────────────────────────────────────────────────────────────
+let _configLoaded = false;
+
+const CONFIG_FIELDS = [
+  'bonus_cadastro',
+  'plano_essencial_creditos',    'plano_essencial_preco_mensal',
+  'plano_essencial_preco_anual', 'plano_essencial_preco_avulso',
+  'plano_profissional_creditos',    'plano_profissional_preco_mensal',
+  'plano_profissional_preco_anual', 'plano_profissional_preco_avulso',
+  'plano_escritorio_creditos',    'plano_escritorio_preco_mensal',
+  'plano_escritorio_preco_anual', 'plano_escritorio_preco_avulso',
+  'avulso_quantidade', 'avulso_preco',
+];
+
+async function loadConfig() {
+  _configLoaded = true;
+  try {
+    const data = await api('GET', '/admin/config');
+    // Flatten nested object into flat keys
+    const flat = {
+      bonus_cadastro: data.bonus_cadastro,
+      plano_essencial_creditos:        data.essencial?.creditos,
+      plano_essencial_preco_mensal:    data.essencial?.preco_mensal,
+      plano_essencial_preco_anual:     data.essencial?.preco_anual,
+      plano_essencial_preco_avulso:    data.essencial?.preco_avulso,
+      plano_profissional_creditos:     data.profissional?.creditos,
+      plano_profissional_preco_mensal: data.profissional?.preco_mensal,
+      plano_profissional_preco_anual:  data.profissional?.preco_anual,
+      plano_profissional_preco_avulso: data.profissional?.preco_avulso,
+      plano_escritorio_creditos:       data.escritorio?.creditos,
+      plano_escritorio_preco_mensal:   data.escritorio?.preco_mensal,
+      plano_escritorio_preco_anual:    data.escritorio?.preco_anual,
+      plano_escritorio_preco_avulso:   data.escritorio?.preco_avulso,
+      avulso_quantidade: data.avulso?.quantidade,
+      avulso_preco:      data.avulso?.preco,
+    };
+    CONFIG_FIELDS.forEach(k => {
+      const el = document.getElementById(`cfg-${k}`);
+      if (el && flat[k] !== undefined) el.value = flat[k];
+    });
+  } catch (e) {
+    toast('Erro ao carregar configurações: ' + e.message, 'error');
+  }
+}
+
+document.getElementById('btn-save-config').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-save-config');
+  clearMsg('msg-config');
+  btn.disabled    = true;
+  btn.textContent = 'Salvando…';
+
+  const body = {};
+  CONFIG_FIELDS.forEach(k => {
+    const el = document.getElementById(`cfg-${k}`);
+    if (!el) return;
+    const v = el.value.trim();
+    if (v === '') return;
+    body[k] = k.includes('creditos') || k.includes('quantidade') ? parseInt(v) : parseFloat(v);
+  });
+
+  try {
+    await api('PATCH', '/admin/config', body);
+    setMsg('msg-config', 'Configurações salvas com sucesso.', 'success');
+  } catch (e) {
+    setMsg('msg-config', e.message || 'Erro ao salvar');
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Salvar configurações';
+  }
+});
+
+// ─── Init ──────────────────────────────────────────────────────────────────────
+function init() {
+  if (getToken()) {
+    showPanel();
+    const hash = window.location.hash.replace('#', '') || 'dashboard';
+    showTab(hash);
+    if (hash === 'dashboard') loadDashboard();
+  } else {
+    showLogin();
+  }
+}
+
+init();
+
+</script>
+</body>
+</html>
+

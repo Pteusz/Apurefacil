@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apurei — Validação</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --success: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --radius: 8px;
+      --font: 'Inter', system-ui, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: .25rem; }
+    h2 { font-size: 1rem; font-weight: 600; color: var(--muted); margin-bottom: 1.25rem; }
+    h3 { font-size: .875rem; font-weight: 600; text-transform: uppercase;
+         letter-spacing: .05em; color: var(--muted); margin-bottom: .75rem; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem; height: 1.5rem;
+      border-radius: 50%;
+      font-size: .75rem;
+      font-weight: 700;
+      background: var(--accent);
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+    .badge.done { background: var(--success); }
+    .badge.locked { background: var(--border); color: var(--muted); }
+
+    label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: .4rem; }
+
+    input[type="email"], input[type="text"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: .875rem;
+      padding: .6rem .8rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus { border-color: var(--accent); }
+
+    .row { display: flex; gap: .75rem; align-items: flex-end; }
+    .row > * { flex: 1; }
+    .row > button { flex: 0 0 auto; }
+
+    button {
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius);
+      color: #fff;
+      cursor: pointer;
+      font-size: .875rem;
+      font-weight: 600;
+      padding: .6rem 1.2rem;
+      transition: background .15s, opacity .15s;
+      white-space: nowrap;
+    }
+    button:hover { background: var(--accent-hover); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    button.secondary:hover { border-color: var(--accent); color: var(--accent-hover); }
+    button.danger { background: var(--danger); }
+
+    .file-drop {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s;
+    }
+    .file-drop:hover, .file-drop.drag-over { border-color: var(--accent); }
+    .file-drop input { display: none; }
+    .file-drop .icon { font-size: 2rem; margin-bottom: .5rem; }
+    .file-drop p { color: var(--muted); font-size: .85rem; }
+    .file-drop .selected { color: var(--success); font-weight: 600; margin-top: .5rem; }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .metric {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+    }
+    .metric .label { font-size: .75rem; color: var(--muted); margin-bottom: .25rem; }
+    .metric .value { font-size: 1.25rem; font-weight: 700; }
+    .metric .value.green { color: var(--success); }
+    .metric .value.warn  { color: var(--warn); }
+
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    th { text-align: left; color: var(--muted); font-weight: 500; padding: .5rem .75rem;
+         border-bottom: 1px solid var(--border); }
+    td { padding: .5rem .75rem; border-bottom: 1px solid rgba(255,255,255,.04); }
+    tr:hover td { background: rgba(255,255,255,.02); }
+
+    .pill {
+      display: inline-block;
+      border-radius: 9999px;
+      font-size: .7rem;
+      font-weight: 600;
+      padding: .15rem .6rem;
+    }
+    .pill.active   { background: rgba(34,197,94,.15);  color: var(--success); }
+    .pill.inactive { background: rgba(100,116,139,.15); color: var(--muted); }
+
+    .flag-badge {
+      display: inline-block;
+      border-radius: 4px;
+      font-size: .65rem;
+      font-weight: 600;
+      padding: .1rem .4rem;
+    }
+    .flag-badge.renda_recorrente  { background: rgba(34,197,94,.15);  color: var(--success); }
+    .flag-badge.auto_transferencia { background: rgba(239,68,68,.15);  color: var(--danger); }
+    .flag-badge.despesa_recorrente { background: rgba(100,116,139,.15); color: var(--muted); }
+    .flag-badge.renda_eventual     { background: rgba(245,158,11,.15); color: var(--warn); }
+
+    .status-bar {
+      font-size: .8rem;
+      color: var(--muted);
+      padding: .6rem .8rem;
+      background: var(--bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      margin-bottom: 1rem;
+      min-height: 2.2rem;
+    }
+    .status-bar.error { border-color: var(--danger); color: var(--danger); }
+    .status-bar.ok    { border-color: var(--success); color: var(--success); }
+
+    .section-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 1.25rem 0;
+    }
+
+    .hidden { display: none; }
+    .spin { display: inline-block; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .token-box {
+      font-family: monospace;
+      font-size: .75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: .5rem .75rem;
+      word-break: break-all;
+      color: var(--muted);
+    }
+
+    .composicao-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: .5rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: .85rem;
+    }
+    .composicao-item:last-child { border-bottom: none; }
+    .composicao-item .name { flex: 1; color: var(--text); }
+    .composicao-item .valor { font-weight: 600; color: var(--success); }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div style="margin-bottom:2rem;">
+    <h1>Apurei</h1>
+    <h2>Página de validação do backend</h2>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div id="status" class="status-bar">Aguardando autenticação...</div>
+
+  <!-- STEP 1: AUTH -->
+  <div class="card" id="card-auth">
+    <div class="card-header">
+      <span class="badge" id="badge-auth">1</span>
+      <h3 style="margin:0">Autenticação (dev-token)</h3>
+    </div>
+    <div class="row">
+      <div>
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="voce@exemplo.com" value="dev@estabilizei.com.br">
+      </div>
+      <button onclick="obterToken()">Obter token</button>
+    </div>
+    <div id="token-display" class="token-box hidden" style="margin-top:.75rem;"></div>
+    <div id="user-info" style="margin-top:.75rem;font-size:.8rem;color:var(--muted);"></div>
+  </div>
+
+  <!-- STEP 2: UPLOAD -->
+  <div class="card" id="card-upload">
+    <div class="card-header">
+      <span class="badge locked" id="badge-upload">2</span>
+      <h3 style="margin:0">Upload do PDF</h3>
+    </div>
+    <div class="file-drop" id="file-drop" onclick="document.getElementById('pdf-input').click()"
+         ondragover="ev(event,'drag-over')" ondragleave="ev(event,'')" ondrop="onDrop(event)">
+      <input type="file" id="pdf-input" accept=".pdf" onchange="onFileSelect(event)">
+      <div class="icon">📄</div>
+      <p>Clique ou arraste um extrato bancário em PDF</p>
+      <div class="selected hidden" id="file-name"></div>
+    </div>
+    <div style="margin-top:1rem;display:flex;gap:.75rem;align-items:center;">
+      <div style="flex:1;">
+        <label for="session-name">Nome da apuração</label>
+        <input type="text" id="session-name" placeholder="Ex: João Silva - Q1 2026">
+      </div>
+      <button onclick="processarPDF()" id="btn-processar" disabled>
+        Processar PDF
+      </button>
+    </div>
+  </div>
+
+  <!-- STEP 3: RESULTADO -->
+  <div class="card hidden" id="card-resultado">
+    <div class="card-header">
+      <span class="badge done" id="badge-result">✓</span>
+      <h3 style="margin:0">Resultado da apuração</h3>
+    </div>
+
+    <div class="result-grid" id="metricas"></div>
+
+    <h3>Composição por pagador</h3>
+    <div id="composicao" style="margin-bottom:1.25rem;"></div>
+
+    <hr class="section-divider">
+
+    <h3>Lançamentos por mês</h3>
+    <div id="meses-container"></div>
+
+    <hr class="section-divider">
+
+    <div style="display:flex;gap:.75rem;">
+      <button class="secondary" onclick="recarregarApuracao()">↻ Recalcular</button>
+      <button class="secondary" onclick="verRaw()">{ } Ver JSON completo</button>
+      <button class="danger" onclick="novaSessao()">Nova sessão</button>
+    </div>
+  </div>
+
+  <!-- DEBUG -->
+  <div class="card hidden" id="card-raw">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+      <h3 style="margin:0">JSON da sessão (versions[])</h3>
+      <button class="secondary" onclick="document.getElementById('card-raw').classList.add('hidden')">Fechar</button>
+    </div>
+    <pre id="raw-json" style="font-size:.72rem;overflow:auto;max-height:400px;color:var(--muted);"></pre>
+  </div>
+
+</div>
+
+<script>
+  // ── Config ────────────────────────────────────────────────────────────────
+  const API = window.location.origin.includes('front.')
+    ? window.location.origin.replace('front.', 'backend.')
+    : window.location.origin;
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let token     = null;
+  let fileId    = null;
+  let sessionId = null;
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function setStatus(msg, type = '') {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = 'status-bar' + (type ? ' ' + type : '');
+  }
+
+  async function api(method, path, body = null, isJson = true) {
+    const headers = { 'Authorization': 'Bearer ' + token };
+    if (isJson && body) headers['Content-Type'] = 'application/json';
+    const opts = { method, headers };
+    if (body) opts.body = isJson ? JSON.stringify(body) : body;
+    const res  = await fetch(API + path, opts);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    return data;
+  }
+
+  function fmt(v) {
+    return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2});
+  }
+
+  function ev(e, cls) {
+    e.preventDefault();
+    document.getElementById('file-drop').className = 'file-drop' + (cls ? ' ' + cls : '');
+  }
+
+  // ── Step 1: Auth ──────────────────────────────────────────────────────────
+  async function obterToken() {
+    const email = document.getElementById('email').value.trim();
+    if (!email) return setStatus('Informe um email.', 'error');
+
+    setStatus('⏳ Obtendo token...');
+    try {
+      const data = await fetch(API + '/auth/dev-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }).then(r => r.json());
+
+      if (data.detail) throw new Error(data.detail);
+
+      token = data.token;
+      document.getElementById('token-display').textContent = token;
+      document.getElementById('token-display').classList.remove('hidden');
+      document.getElementById('user-info').textContent =
+        `Usuário: ${data.user.email} · ID: ${data.user.id}`;
+      document.getElementById('badge-auth').classList.add('done');
+      document.getElementById('badge-auth').textContent = '✓';
+      document.getElementById('badge-upload').classList.remove('locked');
+      document.getElementById('badge-upload').className = 'badge';
+      document.getElementById('btn-processar').disabled = false;
+      setStatus('✓ Autenticado como ' + email, 'ok');
+    } catch(e) {
+      setStatus('Erro: ' + e.message, 'error');
+    }
+  }
+
+  // ── Step 2a: File select ──────────────────────────────────────────────────
+  function onFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    document.getElementById('file-name').textContent = file.name;
+    document.getElementById('file-name').classList.remove('hidden');
+    if (!document.getElementById('session-name').value) {
+      document.getElementById('session-name').value = file.name.replace(/\.pdf$/i, '');
+    }
+  }
+
+  function onDrop(e) {
+    ev(e, '');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.pdf')) {
+      document.getElementById('pdf-input').files = e.dataTransfer.files;
+      onFileSelect({ target: { files: [file] } });
+    }
+  }
+
+  // ── Step 2b: Upload + criar sessão ────────────────────────────────────────
+  async function processarPDF() {
+    if (!token) return setStatus('Autentique-se primeiro.', 'error');
+
+    const fileInput = document.getElementById('pdf-input');
+    const file      = fileInput.files[0];
+    if (!file) return setStatus('Selecione um PDF.', 'error');
+
+    const sessionName = document.getElementById('session-name').value.trim() || 'Nova apuração';
+
+    try {
+      // Upload
+      setStatus('⏳ Enviando PDF...');
+      const formData = new FormData();
+      formData.append('file', file);
+      const uploadRes = await fetch(API + '/upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body: formData,
+      }).then(r => r.json());
+      if (uploadRes.detail) throw new Error(uploadRes.detail);
+      fileId = uploadRes.file_id;
+      setStatus(`⏳ PDF enviado (${uploadRes.total_pages} página(s)). Processando extrato...`);
+
+      // Criar sessão
+      const sessao = await api('POST', '/sessao', { file_id: fileId, session_name: sessionName });
+      sessionId = sessao.session_id;
+
+      // Apuração
+      setStatus('⏳ Calculando apuração...');
+      const apuracao = await api('GET', `/sessao/${sessionId}/apuracao`);
+
+      renderResultado(sessao, apuracao);
+      setStatus(`✓ Sessão criada: ${sessionId}`, 'ok');
+      document.getElementById('card-resultado').classList.remove('hidden');
+    } catch(e) {
+      setStatus('Erro: ' + e.message, 'error');
+    }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function renderResultado(sessao, apuracao) {
+    // Métricas
+    document.getElementById('metricas').innerHTML = `
+      <div class="metric">
+        <div class="label">Renda apurada/mês</div>
+        <div class="value green">${fmt(apuracao.renda_apurada_mensal)}</div>
+      </div>
+      <div class="metric">
+        <div class="label">Meses analisados</div>
+        <div class="value">${apuracao.meses_analisados}</div>
+      </div>
+      <div class="metric">
+        <div class="label">Pagadores estáveis</div>
+        <div class="value">${(apuracao.composicao || []).length}</div>
+      </div>
+      <div class="metric">
+        <div class="label">Lançamentos excluídos</div>
+        <div class="value ${apuracao.baixa_confianca ? 'warn' : ''}">${(apuracao.excluidos || []).length}</div>
+      </div>
+    `;
+
+    // Composição
+    const comp = (apuracao.composicao || []);
+    document.getElementById('composicao').innerHTML = comp.length
+      ? comp.map(c => `
+          <div class="composicao-item">
+            <span class="name">${c.pagador || '—'}</span>
+            <span style="color:var(--muted);font-size:.75rem;margin:0 1rem;">CV ${(c.cv*100).toFixed(1)}%</span>
+            <span class="valor">${fmt(c.renda_base)}</span>
+          </div>
+        `).join('')
+      : '<p style="color:var(--muted);font-size:.85rem;">Nenhum pagador estável identificado.</p>';
+
+    // Lançamentos por mês
+    const container = document.getElementById('meses-container');
+    const meses     = Object.entries(sessao.meses || {}).sort((a,b) => a[0].localeCompare(b[0]));
+
+    container.innerHTML = meses.map(([mes, lancs]) => {
+      const rows = lancs.map(l => {
+        const s = l.state;
+        const flagClass = s.flag || 'renda_recorrente';
+        return `
+          <tr>
+            <td>${s.data || '—'}</td>
+            <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${s.descricao || ''}">${s.descricao || '—'}</td>
+            <td style="text-align:right;font-weight:600;color:${s.valor > 0 ? 'var(--success)' : 'var(--muted)'}">${fmt(s.valor)}</td>
+            <td><span class="flag-badge ${flagClass}">${flagClass.replace(/_/g,' ')}</span></td>
+            <td><span class="pill ${s.active ? 'active' : 'inactive'}">${s.active ? 'ativo' : 'inativo'}</span></td>
+            <td>
+              <button class="secondary" style="padding:.2rem .6rem;font-size:.7rem;"
+                onclick="toggleLanc('${l.lanc_id}', ${s.active})">
+                ${s.active ? 'Desativar' : 'Ativar'}
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+      return `
+        <div style="margin-bottom:1rem;">
+          <div style="font-size:.8rem;font-weight:600;color:var(--accent);margin-bottom:.5rem;">${mes}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th><th>Descrição</th><th style="text-align:right">Valor</th>
+                <th>Flag</th><th>Status</th><th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ── Mutação via tabela ────────────────────────────────────────────────────
+  async function toggleLanc(lancId, currentActive) {
+    try {
+      setStatus('⏳ Atualizando lançamento...');
+      await api('POST', `/sessao/${sessionId}/mutate`, {
+        op: 'toggle_active',
+        target: lancId,
+        params: { active: !currentActive },
+        source: 'front_validacao',
+      });
+      await recarregarApuracao();
+    } catch(e) {
+      setStatus('Erro: ' + e.message, 'error');
+    }
+  }
+
+  async function recarregarApuracao() {
+    try {
+      setStatus('⏳ Recalculando...');
+      const [sessao, apuracao] = await Promise.all([
+        api('GET', `/sessao/${sessionId}`),
+        api('GET', `/sessao/${sessionId}/apuracao`),
+      ]);
+      renderResultado(sessao, apuracao);
+      setStatus(`✓ Atualizado`, 'ok');
+    } catch(e) {
+      setStatus('Erro: ' + e.message, 'error');
+    }
+  }
+
+  async function verRaw() {
+    try {
+      const raw = await api('GET', `/sessao/${sessionId}/raw`);
+      document.getElementById('raw-json').textContent = JSON.stringify(raw, null, 2);
+      document.getElementById('card-raw').classList.remove('hidden');
+    } catch(e) {
+      setStatus('Erro: ' + e.message, 'error');
+    }
+  }
+
+  function novaSessao() {
+    fileId = null; sessionId = null;
+    document.getElementById('pdf-input').value = '';
+    document.getElementById('file-name').classList.add('hidden');
+    document.getElementById('session-name').value = '';
+    document.getElementById('card-resultado').classList.add('hidden');
+    document.getElementById('card-raw').classList.add('hidden');
+    setStatus('✓ Pronto para nova sessão', 'ok');
+  }
+</script>
+</body>
+</html>
+

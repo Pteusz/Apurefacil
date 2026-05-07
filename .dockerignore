@@ -1,0 +1,16 @@
+# Segredos — nunca entram na imagem
+.env
+
+# Artefatos locais
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Ferramentas de desenvolvimento
+.venv/
+venv/
+.git/
+.gitignore

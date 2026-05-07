@@ -1,0 +1,954 @@
+"""
+modules/extrator_bancario.py
+============================
+Extrator semântico de extratos bancários em PDF.
+
+Suporte: Nubank, Bradesco, PicPay, Banco do Brasil, Itaú, Santander,
+         Caixa Econômica Federal, Mercado Pago, Uber Conta (Digio), Banco Inter
+
+Ponto de entrada público:
+    extract(pdf_path, banco) → dict
+
+Schema de saída:
+    {
+        'total_lancamentos': int,
+        'total_entradas'   : float,
+        'total_saidas'     : float,
+        'saldo'            : float,
+        'lancamentos'      : [
+            {
+                'page'      : int,
+                'date'      : str | None,   — formato original do extrato
+                'entrada'   : float | None,
+                'saida'     : float | None, — sempre negativo quando presente
+                'descricao' : str | None,   — origem/destino
+                '_raw'      : str,          — texto bruto da linha (debug)
+            }
+        ]
+    }
+
+Bancos aceitos (case-insensitive):
+    nubank | bradesco | picpay | bb | itau | santander |
+    caixa  | mercadopago | uber_digio | inter
+"""
+
+import re
+import fitz  # pymupdf
+from typing import Optional
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 1 — Utilitários compartilhados
+# ══════════════════════════════════════════════════════════════════════════════
+
+DEC_RE = re.compile(r'\d{1,3}(?:\.\d{3})*,\d{2}')
+
+
+def _extrair_spans(page) -> list[dict]:
+    """Extrai todos os spans de texto de uma página, ordenados por (y, x)."""
+    raw = page.get_text("dict")
+    out = []
+    for block in raw["blocks"]:
+        if block["type"] != 0:
+            continue
+        for line in block["lines"]:
+            for span in line["spans"]:
+                t = span["text"].strip()
+                if t:
+                    out.append({
+                        "text": t,
+                        "x0"  : round(span["bbox"][0], 1),
+                        "y0"  : round(span["bbox"][1], 1),
+                        "x1"  : round(span["bbox"][2], 1),
+                        "y1"  : round(span["bbox"][3], 1),
+                        "font": span["font"],
+                        "hv"  : bool(DEC_RE.search(t)),
+                    })
+    out.sort(key=lambda s: (s["y0"], s["x0"]))
+    return out
+
+
+def _bbox_da_linha(spans: list[dict]) -> dict:
+    """Bounding box unificada de um grupo de spans (coordenadas PyMuPDF, pontos)."""
+    return {
+        "x0": round(min(s["x0"] for s in spans), 2),
+        "y0": round(min(s["y0"] for s in spans), 2),
+        "x1": round(max(s["x1"] for s in spans), 2),
+        "y1": round(max(s["y1"] for s in spans), 2),
+    }
+
+
+def _agrupar_linhas(spans: list[dict], threshold: float = 5.0) -> list[list[dict]]:
+    """Agrupa spans em linhas lógicas por proximidade vertical."""
+    if not spans:
+        return []
+    linhas, cur = [], [spans[0]]
+    for s in spans[1:]:
+        if s["y0"] - cur[-1]["y0"] > threshold:
+            linhas.append(cur)
+            cur = [s]
+        else:
+            cur.append(s)
+    linhas.append(cur)
+    return linhas
+
+
+def _val_por_x(linha: list[dict], x_min: float, x_max: float) -> tuple[Optional[float], Optional[str]]:
+    """Extrai o primeiro valor monetário cujo span está na faixa de x."""
+    for s in linha:
+        if x_min <= s["x0"] <= x_max and s["hv"]:
+            m = DEC_RE.search(s["text"])
+            if m:
+                return float(m.group().replace(".", "").replace(",", ".")), s["text"]
+    return None, None
+
+
+def _montar_resultado(lancamentos: list[dict]) -> dict:
+    """Monta o dict de resultado com totais calculados."""
+    grand_e = round(sum(l["entrada"] for l in lancamentos if l["entrada"]), 2)
+    grand_s = round(sum(l["saida"]   for l in lancamentos if l["saida"]),   2)
+    return {
+        "total_lancamentos": len(lancamentos),
+        "total_entradas"   : grand_e,
+        "total_saidas"     : grand_s,
+        "saldo"            : round(grand_e + grand_s, 2),
+        "lancamentos"      : lancamentos,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 2 — Extrator Nubank
+#
+# Estrutura: data DD FEV YYYY | tipo transação x≈120 | descrição x≈262 | valor x≈510
+# Âncora   : tipo transação (Transferência/Compra/Pagamento) em x≈120
+# Sinal    : prefixo '-' no valor; semântico como fallback
+# Filtro   : linhas com fontes Bold (Total de entradas/saídas, headers de data)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_nubank(pdf_path: str) -> dict:
+    FILTRO_RE = re.compile(r"saldo total dispon|saldo anterior|saldo final|saldo inicial", re.I)
+    DATE_RE   = re.compile(r"^\d{1,2}\s+[A-Z]{3}\s+\d{4}$", re.I)
+    TIPO_RE   = re.compile(r"^(transferência|compra|pagamento|saque|rendimento)", re.I)
+
+    doc = fitz.open(pdf_path)
+    lancamentos = []
+    data_atual  = None
+
+    for pn in range(len(doc)):
+        for linha in _agrupar_linhas(_extrair_spans(doc[pn])):
+            txt = " ".join(s["text"] for s in linha)
+            if FILTRO_RE.search(txt):
+                continue
+
+            data_s = next(
+                (s for s in linha if 50 <= s["x0"] <= 75 and DATE_RE.match(s["text"])),
+                None,
+            )
+            if data_s:
+                data_atual = data_s["text"]
+
+            ancora = next(
+                (s for s in linha if 110 <= s["x0"] <= 140 and TIPO_RE.match(s["text"])),
+                None,
+            )
+            if not ancora:
+                continue
+
+            val_s = next(
+                (s for s in linha if s["hv"] and 480 <= s["x0"] <= 530),
+                None,
+            )
+            if not val_s:
+                continue
+            m = DEC_RE.search(val_s["text"])
+            if not m:
+                continue
+            v     = float(m.group().replace(".", "").replace(",", "."))
+            sinal = -1 if val_s["text"].startswith("-") else +1
+            if not val_s["text"].startswith("-"):
+                if any(re.search(r"recebida|rendimento|estorno|resgate", s["text"], re.I) for s in linha):
+                    sinal = +1
+                elif any(re.search(r"enviada|compra|pagamento|saque", s["text"], re.I) for s in linha):
+                    sinal = -1
+
+            desc_s = next(
+                (s for s in linha if 250 <= s["x0"] <= 285 and not s["hv"]),
+                None,
+            )
+
+            lancamentos.append({
+                "page"     : pn + 1,
+                "date"     : data_atual,
+                "entrada"  : round(v, 2) if sinal == +1 else None,
+                "saida"    : round(-v, 2) if sinal == -1 else None,
+                "descricao": desc_s["text"] if desc_s else ancora["text"],
+                "bbox"     : _bbox_da_linha(linha),
+                "_raw"     : txt[:80],
+            })
+
+    doc.close()
+    return _montar_resultado(lancamentos)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 3 — Extrator Bradesco
+#
+# Estrutura: tipo em x≈87 (y diferente) | docto em x≈212 | crédito x≈320 OU débito x≈420
+# Âncora   : nº de documento 6-7 dígitos em x≈212
+# Sinal    : crédito se valor em x≈300-345 / débito se valor em x≈400-450
+# Filtro   : Total, saldo anterior
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_bradesco(pdf_path: str) -> dict:
+    FILTRO_TOTAL_RE = re.compile(r"^total$|saldo anterior", re.I)
+    DOCTO_RE        = re.compile(r"^\d{6,7}$")
+    DATA_RE         = re.compile(r"^(\d{2}/\d{2}/\d{2,4})$")
+
+    doc = fitz.open(pdf_path)
+    lancamentos = []
+    data_atual  = None
+
+    for pn in range(len(doc)):
+        linhas = _agrupar_linhas(_extrair_spans(doc[pn]))
+
+        desc_por_y: dict[int, str] = {}
+        for l in linhas:
+            for s in l:
+                if 80 <= s["x0"] <= 100 and not s["hv"]:
+                    desc_por_y[round(s["y0"])] = s["text"]
+
+        for linha in linhas:
+            txt = " ".join(s["text"] for s in linha)
+            if FILTRO_TOTAL_RE.search(txt):
+                continue
+
+            data_s = next(
+                (s for s in linha if 35 <= s["x0"] <= 60 and DATA_RE.match(s["text"])),
+                None,
+            )
+            if data_s:
+                data_atual = data_s["text"]
+
+            ancora = next(
+                (s for s in linha if 200 <= s["x0"] <= 230 and DOCTO_RE.match(s["text"])),
+                None,
+            )
+            if not ancora:
+                continue
+
+            vc, _ = _val_por_x(linha, 300, 345)
+            vd, _ = _val_por_x(linha, 400, 450)
+
+            if vc is None and vd is None:
+                continue
+
+            if vc and vd:
+                v, sinal = vc, +1
+            elif vc:
+                v, sinal = vc, +1
+            else:
+                v, sinal = vd, -1
+
+            y0   = round(linha[0]["y0"])
+            opts = [(abs(dy - y0), txt2) for dy, txt2 in desc_por_y.items() if dy >= y0 - 2]
+            desc = min(opts)[1] if opts else ancora["text"]
+
+            lancamentos.append({
+                "page"     : pn + 1,
+                "date"     : data_atual,
+                "entrada"  : round(v, 2) if sinal == +1 else None,
+                "saida"    : round(-v, 2) if sinal == -1 else None,
+                "descricao": desc,
+                "bbox"     : _bbox_da_linha(linha),
+                "_raw"     : txt[:80],
+            })
+
+    doc.close()
+    return _montar_resultado(lancamentos)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 4 — Extrator PicPay
+#
+# Estrutura: hora HH:MM x≈44 | tipo x≈121 | valor embutido (+/-R$) | destino x≈243
+# Âncora   : hora HH:MM em x≈44
+# Sinal    : prefixo '+R$' ou '−R$' embutido no span do valor
+# Data     : herdada do header "DD de mês YYYY Saldo ao final do dia"
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_picpay(pdf_path: str) -> dict:
+    HORA_RE  = re.compile(r"^\d{2}:\d{2}$")
+    VALOR_RE = re.compile(r"([+−\-])R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})")
+    DATA_RE  = re.compile(r"(\d{1,2}\s+de\s+\w+\s+\d{4})", re.I)
+
+    doc = fitz.open(pdf_path)
+    lancamentos = []
+    data_atual  = None
+
+    for pn in range(len(doc)):
+        for linha in _agrupar_linhas(_extrair_spans(doc[pn])):
+            txt = " ".join(s["text"] for s in linha)
+
+            for s in linha:
+                if 35 <= s["x0"] <= 55:
+                    mm = DATA_RE.match(s["text"])
+                    if mm:
+                        data_atual = mm.group(1)
+
+            ancora = next(
+                (s for s in linha if 35 <= s["x0"] <= 60 and HORA_RE.match(s["text"])),
+                None,
+            )
+            if not ancora:
+                continue
+
+            m_val = None
+            for s in linha:
+                mm = VALOR_RE.search(s["text"])
+                if mm:
+                    m_val = mm
+                    break
+            if not m_val:
+                continue
+
+            sinal = -1 if m_val.group(1) in ("-", "−") else +1
+            v     = float(m_val.group(2).replace(".", "").replace(",", "."))
+
+            desc_s = next(
+                (s for s in linha if 110 <= s["x0"] <= 140 and s is not ancora),
+                None,
+            )
+
+            lancamentos.append({
+                "page"     : pn + 1,
+                "date"     : data_atual,
+                "entrada"  : round(v, 2) if sinal == +1 else None,
+                "saida"    : round(-v, 2) if sinal == -1 else None,
+                "descricao": desc_s["text"] if desc_s else None,
+                "bbox"     : _bbox_da_linha(linha),
+                "_raw"     : txt[:80],
+            })
+
+    doc.close()
+    return _montar_resultado(lancamentos)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 5 — Extrator Banco do Brasil
+#
+# Estrutura: data x≈30 | lote x≈99 | docto x≈148 | valor com (+/-) no texto
+# Âncora   : data DD/MM/YYYY em x≈30 + valor com sufixo (+) ou (-)
+# Sinal    : sufixo explícito ('+') ou ('-') no texto do valor
+# Filtro   : Saldo do dia, BB Rende Fácil, Saldo Anterior
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_bb(pdf_path: str) -> dict:
+    FILTRO_RE = re.compile(
+        r"saldo do dia|saldo anterior|bb rende f|rende facil|S\s*A\s*L\s*D\s*O", re.I
+    )
+    DATE_RE  = re.compile(r"^\d{2}/\d{2}/\d{4}$")
+    SINAL_RE = re.compile(r"(\d{1,3}(?:\.\d{3})*,\d{2})\s*\(([+\-])\)")
+
+    doc = fitz.open(pdf_path)
+    lancamentos = []
+    data_atual  = None
+
+    for pn in range(len(doc)):
+        linhas = _agrupar_linhas(_extrair_spans(doc[pn]))
+
+        desc_por_y: dict[int, str] = {}
+        for l in linhas:
+            for s in l:
+                if 250 <= s["x0"] <= 290 and not s["hv"] and not FILTRO_RE.search(s["text"]):
+                    desc_por_y[round(s["y0"])] = s["text"]
+
+        for linha in linhas:
+            txt = " ".join(s["text"] for s in linha)
+            if FILTRO_RE.search(txt):
+                continue
+
+            data_s = next(
+                (s for s in linha if 20 <= s["x0"] <= 50 and DATE_RE.match(s["text"])),
+                None,
+            )
+            if data_s:
+                data_atual = data_s["text"]
+
+            m = SINAL_RE.search(txt)
+            if not m:
+                continue
+            v     = float(m.group(1).replace(".", "").replace(",", "."))
+            sinal = +1 if m.group(2) == "+" else -1
+            if v < 0.001:
+                continue
+
+            desc_inline = next(
+                (s["text"] for s in linha if 250 <= s["x0"] <= 290 and not s["hv"]),
+                None,
+            )
+            if not desc_inline:
+                y0   = round(linha[0]["y0"])
+                opts = [(abs(dy - y0), t2) for dy, t2 in desc_por_y.items() if dy >= y0 - 2]
+                desc_inline = min(opts)[1] if opts else None
+
+            lancamentos.append({
+                "page"     : pn + 1,
+                "date"     : data_atual,
+                "entrada"  : round(v, 2) if sinal == +1 else None,
+                "saida"    : round(-v, 2) if sinal == -1 else None,
+                "descricao": desc_inline,
+                "bbox"     : _bbox_da_linha(linha),
+                "_raw"     : txt[:80],
+            })
+
+    doc.close()
+    return _montar_resultado(lancamentos)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 6 — Extrator Itaú
+#
+# Estrutura: data x≈31 | descrição x≈96 | valor x≈4xx
+# Âncora   : data DD/MM/YYYY em x≈31 + descrição em x≈96
+# Sinal    : prefixo '-' no span do valor; ausência de prefixo = crédito
+# Filtro   : SALDO TOTAL DISPONÍVEL DIA, SALDO ANTERIOR
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_itau(pdf_path: str) -> dict:
+    FILTRO_RE = re.compile(r"saldo total dispon|saldo anterior", re.I)
+    DATE_RE   = re.compile(r"^\d{2}/\d{2}/\d{4}$")
+
+    doc = fitz.open(pdf_path)
+    lancamentos = []
+    data_atual  = None
+
+    for pn in range(len(doc)):
+        for linha in _agrupar_linhas(_extrair_spans(doc[pn])):
+            txt = " ".join(s["text"] for s in linha)
+            if FILTRO_RE.search(txt):
+                continue
+            if not any(s["hv"] for s in linha):
+                continue
+
+            data_s = next(
+                (s for s in linha if 25 <= s["x0"] <= 40 and DATE_RE.match(s["text"])),
+                None,
+            )
+            if data_s:
+                data_atual = data_s["text"]
+
+            desc_s = next(
+                (s for s in linha if 88 <= s["x0"] <= 110 and not s["hv"]),
+                None,
+            )
+            if not desc_s:
+                continue
+
+            val_spans = [s for s in linha if s["hv"] and s["x0"] > 200]
+            if not val_spans:
+                continue
+            val_s = val_spans[-1]
+            m = DEC_RE.search(val_s["text"])
+            if not m:
+                continue
+            v     = float(m.group().replace(".", "").replace(",", "."))
+            sinal = -1 if val_s["text"].startswith("-") or val_s["text"].endswith("-") else +1
+
+            lancamentos.append({
+                "page"     : pn + 1,
+                "date"     : data_atual,
+                "entrada"  : round(v, 2) if sinal == +1 else None,
+                "saida"    : round(-v, 2) if sinal == -1 else None,
+                "descricao": desc_s["text"],
+                "bbox"     : _bbox_da_linha(linha),
+                "_raw"     : txt[:80],
+            })
+
+    doc.close()
+    return _montar_resultado(lancamentos)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 7 — Extrator Santander
+#
+# Estrutura: data DD/MM x≈34 | descrição x≈65 | docto x≈309 | valor x≈430-441
+# Âncora   : descrição em x≈65 (não-numérica)
+# Sinal    : sufixo '-' no valor = débito; ausência = crédito
+# Data     : DD/MM em x≈34 (herdada quando não aparece na linha)
+# Filtro   : linhas de resumo, totais, cabeçalhos
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_santander(pdf_path: str) -> dict:
+    FILTRO_RE = re.compile(
+        r"^(saldo em|total de cr|total de d[eé]b|dep[oó]sitos|outros cr|compras com|"
+        r"pagamentos|provisão|saldo disp|\(\+\)|\(\-\)|\(=\)|conta corrente|movimenta|"
+        r"mensalidade|limite sant|saldo anter|provisao)",
+        re.I,
+    )
+    DATE_RE = re.compile(r"^\d{2}/\d{2}$")
+
+    doc = fitz.open(pdf_path)
+    lancamentos = []
+    data_atual  = None
+
+    for pn in range(len(doc)):
+        for linha in _agrupar_linhas(_extrair_spans(doc[pn])):
+            txt = " ".join(s["text"] for s in linha)
+
+            data_s = next(
+                (s for s in linha if 28 <= s["x0"] <= 42 and DATE_RE.match(s["text"])),
+                None,
+            )
+            if data_s:
+                data_atual = data_s["text"]
+
+            desc_s = next(
+                (s for s in linha if 58 <= s["x0"] <= 75 and not s["hv"]),
+                None,
+            )
+            if not desc_s:
+                continue
+            if FILTRO_RE.search(desc_s["text"]):
+                continue
+
+            val_reais = [s for s in linha if s["hv"] and s["x0"] <= 490]
+            if not val_reais:
+                continue
+            val_s = val_reais[-1]
+            m = DEC_RE.search(val_s["text"])
+            if not m:
+                continue
+            v     = float(m.group().replace(".", "").replace(",", "."))
+            sinal = -1 if val_s["text"].endswith("-") else +1
+            if v < 0.001:
+                continue
+
+            lancamentos.append({
+                "page"     : pn + 1,
+                "date"     : data_atual,
+                "entrada"  : round(v, 2) if sinal == +1 else None,
+                "saida"    : round(-v, 2) if sinal == -1 else None,
+                "descricao": desc_s["text"],
+                "bbox"     : _bbox_da_linha(linha),
+                "_raw"     : txt[:80],
+            })
+
+    doc.close()
+    return _montar_resultado(lancamentos)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 8 — Extrator Caixa Econômica Federal
+#
+# Estrutura: data x≈30 | nr.doc x≈103 | histórico x≈166 | valor+C/D x≈439 | saldo x≈519
+# Âncora   : data DD/MM/YYYY x≈30 + histórico x≈166
+# Sinal    : sufixo 'C' (crédito) ou 'D' (débito) no valor
+# Filtro   : SALDO DIA, REM BASICA, CRED JUROS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_caixa(pdf_path: str) -> dict:
+    FILTRO_RE = re.compile(r"^saldo dia$|^rem basica$|^cred juros$|saldo anterior", re.I)
+    DATE_RE   = re.compile(r"^\d{2}/\d{2}/\d{4}$")
+    VAL_CD_RE = re.compile(r"(\d{1,3}(?:\.\d{3})*,\d{2})\s*([CD])$")
+
+    doc = fitz.open(pdf_path)
+    lancamentos = []
+
+    for pn in range(len(doc)):
+        for linha in _agrupar_linhas(_extrair_spans(doc[pn])):
+            txt = " ".join(s["text"] for s in linha)
+
+            data_s = next(
+                (s for s in linha if 25 <= s["x0"] <= 40 and DATE_RE.match(s["text"])),
+                None,
+            )
+            hist_s = next(
+                (s for s in linha if 155 <= s["x0"] <= 180 and not s["hv"]),
+                None,
+            )
+            if not data_s or not hist_s:
+                continue
+            if FILTRO_RE.search(hist_s["text"]):
+                continue
+
+            val_s = next(
+                (s for s in linha if 430 <= s["x0"] <= 460 and s["hv"]),
+                None,
+            )
+            if not val_s:
+                continue
+            m = VAL_CD_RE.search(val_s["text"])
+            if not m:
+                continue
+            v     = float(m.group(1).replace(".", "").replace(",", "."))
+            sinal = +1 if m.group(2) == "C" else -1
+
+            lancamentos.append({
+                "page"     : pn + 1,
+                "date"     : data_s["text"],
+                "entrada"  : round(v, 2) if sinal == +1 else None,
+                "saida"    : round(-v, 2) if sinal == -1 else None,
+                "descricao": hist_s["text"],
+                "bbox"     : _bbox_da_linha(linha),
+                "_raw"     : txt[:80],
+            })
+
+    doc.close()
+    return _montar_resultado(lancamentos)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 9 — Extrator Mercado Pago
+#
+# Estrutura: descrição x≈88 (y ACIMA da linha de valor) | data x≈40 | valor x≈290-325
+# Âncora   : data DD-MM-YYYY em x≈40 + valor x≈290-325
+# Sinal    : prefixo "R$ -" = débito; "R$ " sem hífen = crédito
+# Filtro   : Rendimentos, Saldo inicial/final, cabeçalho Detalhe
+# Descrição: linha com y0 imediatamente anterior à linha de data+valor
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_mercadopago(pdf_path: str) -> dict:
+    FILTRO_RE = re.compile(r"^rendimentos$|saldo inicial|saldo final|entradas|saidas|detalhe", re.I)
+    DATE_RE   = re.compile(r"^\d{2}-\d{2}-\d{4}$")
+    VALOR_RE  = re.compile(r"R\$\s*(-)?(\d{1,3}(?:\.\d{3})*,\d{2})")
+
+    doc = fitz.open(pdf_path)
+    lancamentos = []
+    data_atual  = None
+
+    for pn in range(len(doc)):
+        spans  = _extrair_spans(doc[pn])
+        linhas = _agrupar_linhas(spans)
+
+        # índice {y0_arredondado → texto} das descrições em x≈88
+        desc_por_y: dict[int, str] = {}
+        for l in linhas:
+            for s in l:
+                if 85 <= s["x0"] <= 100 and not s["hv"] and not FILTRO_RE.search(s["text"]):
+                    desc_por_y[round(s["y0"])] = s["text"]
+
+        for linha in linhas:
+            data_s = next((s for s in linha if 35 <= s["x0"] <= 50 and DATE_RE.match(s["text"])), None)
+            if data_s:
+                data_atual = data_s["text"]
+
+            val_s = next((s for s in linha if 285 <= s["x0"] <= 325 and s["hv"]), None)
+            if not val_s:
+                continue
+            m = VALOR_RE.search(val_s["text"])
+            if not m:
+                continue
+            v     = float(m.group(2).replace(".", "").replace(",", "."))
+            sinal = -1 if m.group(1) == "-" else +1
+            if v < 0.001:
+                continue
+
+            # descrição: span em x≈88 com y0 ≤ y0 da linha de valor (mais próximo)
+            y_val      = round(linha[0]["y0"])
+            candidatos = [(abs(dy - y_val), t) for dy, t in desc_por_y.items() if dy <= y_val]
+            if not candidatos:
+                continue
+            desc = min(candidatos)[1]
+            if FILTRO_RE.search(desc):
+                continue
+
+            lancamentos.append({
+                "page"     : pn + 1,
+                "date"     : data_atual,
+                "entrada"  : round(v, 2) if sinal == +1 else None,
+                "saida"    : round(-v, 2) if sinal == -1 else None,
+                "descricao": desc,
+                "_raw"     : (" ".join(s["text"] for s in linha))[:80],
+            })
+
+    doc.close()
+    return _montar_resultado(lancamentos)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 10 — Extrator Uber Conta (Banco Digio)
+#
+# Estrutura: tipo x≈37 | data DD/MM/YYYY HH:MM:SS x≈358 | valor x≈492
+# Âncora   : tipo em x≈37 + data em x≈358 + valor em x≈492
+# Sinal    : prefixo "- R$" = débito; "R$ " sem "- " = crédito
+# Filtro   : cabeçalhos, resumo de saldo, rodapés
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_uber_digio(pdf_path: str) -> dict:
+    FILTRO_RE = re.compile(
+        r"^(tipo|saldo|entrou|saiu|exibindo|olá|esse é|total de|atendimento|"
+        r"capitais|demais|3004|0800)", re.I
+    )
+    VALOR_RE = re.compile(r"(-\s*)?R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})")
+    DATE_RE  = re.compile(r"^\d{2}/\d{2}/\d{4}")
+
+    doc = fitz.open(pdf_path)
+    lancamentos = []
+
+    for pn in range(len(doc)):
+        for linha in _agrupar_linhas(_extrair_spans(doc[pn])):
+            txt = " ".join(s["text"] for s in linha)
+
+            tipo_s = next((s for s in linha if 30 <= s["x0"] <= 50 and not s["hv"]), None)
+            if not tipo_s or FILTRO_RE.search(tipo_s["text"]):
+                continue
+
+            data_s = next((s for s in linha if 350 <= s["x0"] <= 370 and DATE_RE.match(s["text"])), None)
+            if not data_s:
+                continue
+
+            val_s = next((s for s in linha if 485 <= s["x0"] <= 510 and s["hv"]), None)
+            if not val_s:
+                continue
+            m = VALOR_RE.search(val_s["text"])
+            if not m:
+                continue
+            v     = float(m.group(2).replace(".", "").replace(",", "."))
+            sinal = -1 if m.group(1) else +1
+            if v < 0.001:
+                continue
+
+            lancamentos.append({
+                "page"     : pn + 1,
+                "date"     : data_s["text"][:10],
+                "entrada"  : round(v, 2) if sinal == +1 else None,
+                "saida"    : round(-v, 2) if sinal == -1 else None,
+                "descricao": tipo_s["text"],
+                "bbox"     : _bbox_da_linha(linha),
+                "_raw"     : txt[:80],
+            })
+
+    doc.close()
+    return _montar_resultado(lancamentos)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 11 — Extrator Banco Inter
+#
+# Estrutura: data "N de Mês de YYYY" x≈41 (mesma linha de "Saldo do dia:")
+#            lançamento: span único x≈44 com "Tipo: descrição" | valor x≈421
+# Âncora   : span em x≈44 que inicia com tipo reconhecido (Pix enviado: etc)
+# Sinal    : prefixo "-R$" no valor = débito; "R$" sem "-" = crédito
+# Atenção  : data capturada ANTES do filtro (data coexiste com "Saldo do dia:")
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_inter(pdf_path: str) -> dict:
+    FILTRO_RE = re.compile(
+        r"saldo do dia|fale com a gente|sac:|ouvidoria|deficiência|"
+        r"solicitado em|saldo total|saldo disponível|saldo bloqueado|"
+        r"período:|instituição:|cpf/cnpj|agência|conta:|banco inter|"
+        r"\(bloqueado\)|^valor$|saldo por transação|saldo anterior|"
+        r"total de entrada|total de saída|saldo final", re.I
+    )
+    DATA_RE  = re.compile(r"^\d{1,2} de \w+ de \d{4}$", re.I)
+    TIPO_RE  = re.compile(
+        r"^(Pix enviado:|Pix recebido:|Compra no debito:|Pagamento efetuado:|Credito liberado:)",
+        re.I,
+    )
+    VALOR_RE = re.compile(r"(-)?R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})")
+
+    doc = fitz.open(pdf_path)
+    lancamentos = []
+    data_atual  = None
+
+    for pn in range(len(doc)):
+        for linha in _agrupar_linhas(_extrair_spans(doc[pn])):
+            # 1) capturar data ANTES de filtrar — ela aparece na linha de "Saldo do dia"
+            data_s = next((s for s in linha if 38 <= s["x0"] <= 50 and DATA_RE.match(s["text"])), None)
+            if data_s:
+                data_atual = data_s["text"]
+
+            # 2) filtrar linhas não-lançamento
+            txt = " ".join(s["text"] for s in linha)
+            if FILTRO_RE.search(txt):
+                continue
+
+            # 3) âncora: tipo em x≈44
+            desc_s = next((s for s in linha if 40 <= s["x0"] <= 52 and TIPO_RE.match(s["text"])), None)
+            if not desc_s:
+                continue
+
+            # 4) valor em x≈421
+            val_s = next((s for s in linha if 415 <= s["x0"] <= 435 and s["hv"]), None)
+            if not val_s:
+                continue
+            m = VALOR_RE.search(val_s["text"])
+            if not m:
+                continue
+            v     = float(m.group(2).replace(".", "").replace(",", "."))
+            sinal = -1 if m.group(1) == "-" else +1
+            if v < 0.001:
+                continue
+
+            lancamentos.append({
+                "page"     : pn + 1,
+                "date"     : data_atual,
+                "entrada"  : round(v, 2) if sinal == +1 else None,
+                "saida"    : round(-v, 2) if sinal == -1 else None,
+                "descricao": desc_s["text"],
+                "bbox"     : _bbox_da_linha(linha),
+                "_raw"     : txt[:80],
+            })
+
+    doc.close()
+    return _montar_resultado(lancamentos)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 12 — Catálogo de bancos e ponto de entrada público
+# ══════════════════════════════════════════════════════════════════════════════
+
+BANCOS_SUPORTADOS: dict[str, dict] = {
+    "nubank"     : {"fn": _extract_nubank,      "label": "Nubank"},
+    "bradesco"   : {"fn": _extract_bradesco,    "label": "Bradesco"},
+    "picpay"     : {"fn": _extract_picpay,      "label": "PicPay"},
+    "bb"         : {"fn": _extract_bb,          "label": "Banco do Brasil"},
+    "itau"       : {"fn": _extract_itau,        "label": "Itaú"},
+    "santander"  : {"fn": _extract_santander,   "label": "Santander"},
+    "caixa"      : {"fn": _extract_caixa,       "label": "Caixa Econômica Federal"},
+    "mercadopago": {"fn": _extract_mercadopago, "label": "Mercado Pago"},
+    "uber_digio" : {"fn": _extract_uber_digio,  "label": "Uber Conta (Digio)"},
+    "inter"      : {"fn": _extract_inter,       "label": "Banco Inter"},
+}
+
+
+def extract(pdf_path: str, banco: str) -> dict:
+    """
+    Ponto de entrada público.
+
+    Args:
+        pdf_path : caminho para o PDF do extrato
+        banco    : identificador do banco em minúsculas
+                   Valores aceitos: nubank, bradesco, picpay, bb, itau,
+                   santander, caixa, mercadopago, uber_digio, inter
+
+    Returns:
+        dict com chave 'lancamentos' (lista) e totais calculados
+
+    Raises:
+        ValueError: banco não suportado
+    """
+    banco_key = banco.lower().strip()
+    entry     = BANCOS_SUPORTADOS.get(banco_key)
+    if entry is None:
+        raise ValueError(
+            f"Banco '{banco}' não suportado. "
+            f"Bancos disponíveis: {sorted(BANCOS_SUPORTADOS.keys())}"
+        )
+    return entry["fn"](pdf_path)
+
+
+def list_bancos() -> list[dict]:
+    """Retorna lista de bancos suportados para popular selects no frontend."""
+    return [
+        {"key": k, "label": v["label"]}
+        for k, v in BANCOS_SUPORTADOS.items()
+    ]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEÇÃO 13 — Extrator genérico parametrizado por assinatura
+#
+# Usado quando o banco não está no catálogo vanilla mas o usuário cadastrou
+# uma assinatura própria com as 5 variáveis geométricas.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _inferir_sinal_generico(text: str, signal_logic: str) -> int:
+    """Infere sinal (+1 entrada / -1 saída) a partir da lógica da assinatura."""
+    if signal_logic == "prefix_minus":
+        return -1 if text.startswith("-") else +1
+    if signal_logic == "suffix_minus":
+        return -1 if text.rstrip().endswith("-") else +1
+    if signal_logic == "suffix_cd":
+        return +1 if text.rstrip().endswith("C") else -1
+    if signal_logic == "embedded_plus_minus":
+        import re as _re
+        m = _re.search(r"([+−\-])R\$", text)
+        return -1 if m and m.group(1) in ("-", "−") else +1
+    if signal_logic == "suffix_parenthesis":
+        import re as _re
+        return +1 if _re.search(r"\(\+\)$", text) else -1
+    return +1  # fallback seguro
+
+
+def extract_with_signature(pdf_path: str, sig: dict) -> dict:
+    """
+    Extrator genérico parametrizado por uma assinatura do usuário.
+
+    sig deve conter:
+        anchor_x_min, anchor_x_max : float
+        anchor_pattern              : str (regex)
+        value_x_min, value_x_max   : float
+        signal_logic                : str
+
+    Retorna o mesmo schema de todos os extratores vanilla.
+    """
+    try:
+        anchor_re = re.compile(sig["anchor_pattern"])
+    except re.error:
+        anchor_re = re.compile(r".+")
+
+    ax_min = float(sig["anchor_x_min"])
+    ax_max = float(sig["anchor_x_max"])
+    vx_min = float(sig["value_x_min"])
+    vx_max = float(sig["value_x_max"])
+    logic  = sig.get("signal_logic", "prefix_minus")
+
+    doc = fitz.open(pdf_path)
+    lancamentos = []
+    data_atual  = None
+
+    DATE_RE = re.compile(
+        r"^\d{1,2}[-/]\d{2}[-/]\d{2,4}$|^\d{1,2}\s+de\s+\w+\s+de\s+\d{4}$",
+        re.I,
+    )
+
+    for pn in range(len(doc)):
+        for linha in _agrupar_linhas(_extrair_spans(doc[pn])):
+            txt = " ".join(s["text"] for s in linha)
+
+            # Herança de data — qualquer span que parece data na linha
+            data_s = next(
+                (s for s in linha if DATE_RE.match(s["text"].strip())), None
+            )
+            if data_s:
+                data_atual = data_s["text"]
+
+            # Âncora
+            ancora = next(
+                (s for s in linha
+                 if ax_min <= s["x0"] <= ax_max and anchor_re.match(s["text"])),
+                None,
+            )
+            if not ancora:
+                continue
+
+            # Valor
+            val_s = next(
+                (s for s in linha if vx_min <= s["x0"] <= vx_max and s["hv"]),
+                None,
+            )
+            if not val_s:
+                continue
+
+            m = DEC_RE.search(val_s["text"])
+            if not m:
+                continue
+
+            v     = float(m.group().replace(".", "").replace(",", "."))
+            sinal = _inferir_sinal_generico(val_s["text"], logic)
+            if v < 0.001:
+                continue
+
+            lancamentos.append({
+                "page"     : pn + 1,
+                "date"     : data_atual,
+                "entrada"  : round(v, 2) if sinal == +1 else None,
+                "saida"    : round(-v, 2) if sinal == -1 else None,
+                "descricao": ancora["text"],
+                "bbox"     : _bbox_da_linha(linha),
+                "_raw"     : txt[:80],
+            })
+
+    doc.close()
+    return _montar_resultado(lancamentos)
+

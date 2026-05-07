@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Minha Conta — Apurei</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <div class="sidebar-top" style="padding-top: 12px;">
+      <a href="index.html" class="settings-nav-back">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.6"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Apuração
+      </a>
+    </div>
+
+    <span class="sidebar-section-label">Conta</span>
+
+    <div style="padding: 2px 0;">
+      <button class="settings-nav-item" data-tab="perfil">Perfil</button>
+      <button class="settings-nav-item" data-tab="plano">Plano &amp; Créditos</button>
+      <button class="settings-nav-item" data-tab="financas">Finanças</button>
+    </div>
+
+    <div style="flex: 1;"></div>
+
+    <div class="sidebar-footer" id="sidebar-footer">
+      <div class="user-avatar" id="user-avatar">?</div>
+      <div class="user-info">
+        <div class="user-display-name" id="user-display-name">—</div>
+        <div class="user-plan-label"   id="user-plan-label">—</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────────────────────── -->
+  <div class="settings-main" id="settings-main">
+
+    <!-- ═══ Tab: Perfil ═════════════════════════════════════════════════════ -->
+    <section id="tab-perfil" hidden>
+      <h1 class="settings-section-title">Perfil</h1>
+
+      <!-- Dados pessoais -->
+      <div class="settings-card">
+        <div class="settings-card-title">Dados pessoais</div>
+        <div class="field-row">
+          <label class="field-label" for="input-nome">Nome completo</label>
+          <input class="field-input" type="text" id="input-nome"
+                 placeholder="Seu nome" autocomplete="name" />
+        </div>
+        <div class="field-actions">
+          <button class="btn-save" id="btn-save-nome">Salvar</button>
+        </div>
+        <div class="field-msg" id="msg-nome"></div>
+      </div>
+
+      <!-- E-mail -->
+      <div class="settings-card">
+        <div class="settings-card-title">E-mail</div>
+        <div class="field-row">
+          <label class="field-label" for="input-email">Endereço de e-mail</label>
+          <input class="field-input" type="email" id="input-email"
+                 disabled autocomplete="email" />
+          <span class="field-hint">Para alterar o e-mail, enviaremos um link de confirmação.</span>
+        </div>
+        <div class="field-actions">
+          <button class="btn-outline" id="btn-alterar-email">Alterar e-mail</button>
+        </div>
+        <div class="field-msg" id="msg-email"></div>
+      </div>
+
+      <!-- Senha -->
+      <div class="settings-card">
+        <div class="settings-card-title">Senha</div>
+
+        <!-- Estado inicial -->
+        <div id="senha-idle">
+          <p class="text-sm text-muted" id="senha-idle-text">Você ainda não definiu uma senha. Pode usar magic link para entrar a qualquer momento.</p>
+          <div class="field-actions">
+            <button class="btn-outline" id="btn-definir-senha">Definir senha</button>
+          </div>
+        </div>
+
+        <!-- Formulário de senha -->
+        <div id="senha-form" hidden>
+          <div class="field-row">
+            <label class="field-label" for="input-senha-atual">Senha atual
+              <span class="field-hint" style="display:inline; font-size: var(--font-size-xs);">(deixe em branco se ainda não definiu)</span>
+            </label>
+            <input class="field-input" type="password" id="input-senha-atual"
+                   placeholder="Senha atual (opcional)" autocomplete="current-password" />
+          </div>
+          <div class="field-row">
+            <label class="field-label" for="input-nova-senha">Nova senha</label>
+            <input class="field-input" type="password" id="input-nova-senha"
+                   placeholder="Nova senha" autocomplete="new-password" />
+          </div>
+          <div class="field-row">
+            <label class="field-label" for="input-confirmar-senha">Confirmar nova senha</label>
+            <input class="field-input" type="password" id="input-confirmar-senha"
+                   placeholder="Repita a nova senha" autocomplete="new-password" />
+          </div>
+          <div class="field-actions">
+            <button class="btn-save" id="btn-save-senha">Salvar senha</button>
+            <button class="btn-outline" id="btn-cancelar-senha">Cancelar</button>
+          </div>
+          <div class="field-msg" id="msg-senha"></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ═══ Tab: Plano & Créditos ════════════════════════════════════════════ -->
+    <section id="tab-plano" hidden>
+      <h1 class="settings-section-title">Plano &amp; Créditos</h1>
+
+      <!-- Plano atual -->
+      <div class="settings-card">
+        <div class="settings-card-title">Plano atual</div>
+        <div class="current-plan-box">
+          <div class="current-plan-left">
+            <div class="current-plan-name">
+              <span id="plan-name-display">—</span>
+              <span class="plan-tag active">Ativo</span>
+            </div>
+            <div class="credits-display">
+              <div class="credits-label" id="credits-label">— créditos disponíveis</div>
+              <div class="credits-bar-wrap" id="credits-bar-wrap">
+                <div class="credits-bar-fill" id="credits-bar-fill" style="width: 0%"></div>
+              </div>
+            </div>
+            <div class="current-plan-renewal" id="plan-renewal"></div>
+          </div>
+          <div>
+            <button class="btn-outline" id="btn-gerenciar-assinatura" hidden>
+              Gerenciar assinatura
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Escolha seu plano -->
+      <div class="settings-card">
+        <div class="settings-card-title">Escolha seu plano</div>
+
+        <!-- Toggle mensal/anual -->
+        <div class="pricing-toggle-row">
+          <span class="toggle-label active" id="label-mensal">Mensal</span>
+          <label class="toggle-pill">
+            <input type="checkbox" id="toggle-anual" />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+          <span class="toggle-label" id="label-anual">Anual</span>
+          <span class="badge-savings" id="badge-savings" style="display:none;">2 meses grátis</span>
+        </div>
+
+        <!-- Créditos avulsos -->
+        <div class="avulsos-card">
+          <div class="avulsos-left">
+            <div class="avulsos-title">Créditos avulsos</div>
+            <div class="avulsos-desc">Pacote com 10 créditos, sem compromisso de assinatura</div>
+          </div>
+          <div class="avulsos-right">
+            <div class="avulsos-price" id="avulsos-price">R$99,00</div>
+            <div class="avulsos-per-credit" id="avulsos-per-credit">R$9,90 por crédito</div>
+            <button class="btn-outline" id="btn-comprar-avulso">Comprar</button>
+          </div>
+        </div>
+
+        <!-- Upsell follow-up -->
+        <div class="avulsos-followup" id="avulsos-followup">
+          <div class="avulsos-followup-text" id="avulsos-followup-text">
+            Apura com frequência? O Essencial já sai mais em conta — 15 créditos por R$149/mês.
+          </div>
+          <div class="avulsos-followup-actions">
+            <button class="btn-outline" id="btn-followup-ver-planos">Ver planos</button>
+            <button class="btn-outline" id="btn-followup-continuar">Continuar assim mesmo</button>
+          </div>
+        </div>
+
+        <!-- Cards de planos -->
+        <div class="plans-grid" id="plans-grid">
+
+          <!-- Essencial -->
+          <div class="plan-card" data-plan="essencial">
+            <div class="plan-card-name">Essencial</div>
+            <div class="plan-card-desc">Para contadores que estão começando a oferecer apuração de renda como serviço</div>
+            <div class="plan-price-main">
+              <span class="plan-price-value" data-mensal="149" data-anual="124">R$149</span>
+              <span class="plan-price-period">/mês</span>
+            </div>
+            <div class="plan-price-sub" data-mensal="" data-anual="cobrado anualmente — R$1.490/ano">&nbsp;</div>
+            <ul class="plan-features">
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Todos os bancos suportados
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Segunda leitura de segurança
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Revisão de lançamentos antes de finalizar
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Histórico de apurações
+              </li>
+            </ul>
+            <div class="plan-feature-extra">Ideal para carteiras de até 30 clientes · Crédito adicional R$9,90</div>
+            <button class="btn-plan btn-plan-outline" data-plan-btn="essencial">Assinar Essencial</button>
+          </div>
+
+          <!-- Profissional (featured) -->
+          <div class="plan-card featured" data-plan="profissional">
+            <div class="plan-popular-badge">Mais popular</div>
+            <div class="plan-card-name">Profissional</div>
+            <div class="plan-card-desc">Para escritórios que já vendem apuração e querem ganhar escala com agilidade</div>
+            <div class="plan-price-main">
+              <span class="plan-price-value" data-mensal="289" data-anual="241">R$289</span>
+              <span class="plan-price-period">/mês</span>
+            </div>
+            <div class="plan-price-sub" data-mensal="" data-anual="cobrado anualmente — R$2.890/ano">&nbsp;</div>
+            <ul class="plan-features">
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Todos os bancos suportados
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Segunda leitura de segurança
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Revisão e correção com aprovação prévia
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Histórico de apurações
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Exportar laudo e planilha
+              </li>
+            </ul>
+            <div class="plan-feature-extra">Ideal para carteiras de até 80 clientes · Crédito adicional R$8,50</div>
+            <button class="btn-plan btn-plan-solid" data-plan-btn="profissional">Assinar Profissional</button>
+          </div>
+
+          <!-- Escritório -->
+          <div class="plan-card" data-plan="escritorio">
+            <div class="plan-card-name">Escritório</div>
+            <div class="plan-card-desc">Para escritórios de alto volume e correspondentes bancários com demanda contínua</div>
+            <div class="plan-price-main">
+              <span class="plan-price-value" data-mensal="479" data-anual="399">R$479</span>
+              <span class="plan-price-period">/mês</span>
+            </div>
+            <div class="plan-price-sub" data-mensal="" data-anual="cobrado anualmente — R$4.790/ano">&nbsp;</div>
+            <ul class="plan-features">
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Todos os bancos suportados
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Segunda leitura de segurança
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Auditoria completa linha a linha
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Histórico de apurações
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Exportar laudo e planilha
+              </li>
+              <li class="plan-feature-item">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 7l3 3 6-6" stroke="var(--color-success)" stroke-width="1.8"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Acesso prioritário a novidades
+              </li>
+            </ul>
+            <div class="plan-feature-extra">Ideal para carteiras de até 150 clientes · Crédito adicional R$7,00</div>
+            <button class="btn-plan btn-plan-outline" data-plan-btn="escritorio">Assinar Escritório</button>
+          </div>
+
+        </div><!-- /plans-grid -->
+      </div><!-- /settings-card -->
+
+    </section>
+
+    <!-- ═══ Tab: Finanças ════════════════════════════════════════════════════ -->
+    <section id="tab-financas" hidden>
+      <h1 class="settings-section-title">Finanças</h1>
+
+      <div class="settings-card">
+        <div class="settings-card-title">Histórico de créditos</div>
+        <div id="finance-content">
+          <div class="finance-empty">Carregando...</div>
+        </div>
+      </div>
+
+    </section>
+
+  </div><!-- /settings-main -->
+
+</div><!-- /layout -->
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+<!-- ── JavaScript ─────────────────────────────────────────────────────────────── -->
+<script type="module">
+
+// ─── Config ────────────────────────────────────────────────────────────────────
+const IS_LOCAL = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const API_BASE = IS_LOCAL ? '' : 'https://backend.estabilizei.com.br';
+
+// ─── Token ─────────────────────────────────────────────────────────────────────
+const getToken   = ()  => localStorage.getItem('est_token');
+const setToken   = t   => localStorage.setItem('est_token', t);
+const clearToken = ()  => localStorage.removeItem('est_token');
+
+// ─── State ─────────────────────────────────────────────────────────────────────
+let currentUser = null;
+let extrato     = [];
+let pageSize    = 10;
+let currentPage = 1;
+
+// ─── API ───────────────────────────────────────────────────────────────────────
+async function api(method, path, body = null) {
+  const headers = {};
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (body)  headers['Content-Type']  = 'application/json';
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : null,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Erro ${res.status}`);
+  }
+  return res.json();
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+function esc(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function fmtDate(iso) {
+  try {
+    return new Date(iso).toLocaleDateString('pt-BR', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    });
+  } catch { return iso; }
+}
+
+function capitalize(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+}
+
+function toast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = `toast${type ? ` ${type}` : ''}`;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3600);
+}
+
+function setMsg(id, text, type = 'error') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = `field-msg ${type}`;
+}
+
+function clearMsg(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = '';
+  el.className = 'field-msg';
+}
+
+// ─── Sidebar user ──────────────────────────────────────────────────────────────
+function renderSidebarUser(user) {
+  const name    = user ? (user.nome || user.email || '—') : '—';
+  const initial = name === '—' ? '?' : name.charAt(0).toUpperCase();
+  const plan    = user
+    ? `${capitalize(user.plano || 'trial')} · ${user.creditos ?? 0} créditos`
+    : '—';
+
+  document.getElementById('user-avatar').textContent       = initial;
+  document.getElementById('user-display-name').textContent = name;
+  document.getElementById('user-plan-label').textContent   = plan;
+}
+
+// ─── Tab navigation ────────────────────────────────────────────────────────────
+const TABS = ['perfil', 'plano', 'financas'];
+
+function showTab(tab) {
+  if (!TABS.includes(tab)) tab = 'perfil';
+
+  TABS.forEach(t => {
+    document.getElementById(`tab-${t}`).hidden = t !== tab;
+  });
+
+  document.querySelectorAll('.settings-nav-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+
+  // Update URL hash without scrolling
+  history.replaceState(null, '', `#${tab}`);
+
+  // Lazy load finance data
+  if (tab === 'financas' && extrato.length === 0) {
+    loadFinance();
+  }
+}
+
+// ─── Tab: Perfil ───────────────────────────────────────────────────────────────
+function initPerfil(user) {
+  document.getElementById('input-nome').value  = user.nome  || '';
+  document.getElementById('input-email').value = user.email || '';
+
+  // Show "definir senha" vs "alterar senha" based on whether user has password
+  // We can't know from /auth/me if user has a password, so always show "Definir/Alterar senha"
+  const idleText = document.getElementById('senha-idle-text');
+  idleText.textContent = 'Defina ou altere sua senha de acesso.';
+  document.getElementById('btn-definir-senha').textContent = 'Alterar / Definir senha';
+}
+
+// Save name
+document.getElementById('btn-save-nome').addEventListener('click', async () => {
+  const btn  = document.getElementById('btn-save-nome');
+  const nome = document.getElementById('input-nome').value.trim();
+  if (!nome) { setMsg('msg-nome', 'Informe seu nome completo'); return; }
+
+  btn.disabled    = true;
+  btn.textContent = 'Salvando…';
+  clearMsg('msg-nome');
+
+  try {
+    const updated = await api('PATCH', '/auth/me', { nome });
+    currentUser.nome = updated.nome || nome;
+    renderSidebarUser(currentUser);
+    setMsg('msg-nome', 'Nome atualizado com sucesso.', 'success');
+  } catch (e) {
+    setMsg('msg-nome', e.message || 'Erro ao salvar nome');
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Salvar';
+  }
+});
+
+// Alterar email — send magic link
+document.getElementById('btn-alterar-email').addEventListener('click', async () => {
+  const btn   = document.getElementById('btn-alterar-email');
+  const email = currentUser?.email;
+  if (!email) return;
+
+  btn.disabled    = true;
+  btn.textContent = 'Enviando…';
+  clearMsg('msg-email');
+
+  try {
+    await api('POST', '/auth/magic-link', { email });
+    setMsg('msg-email', 'Link enviado para seu e-mail.', 'success');
+  } catch (e) {
+    setMsg('msg-email', e.message || 'Erro ao enviar link');
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Alterar e-mail';
+  }
+});
+
+// Toggle senha form
+document.getElementById('btn-definir-senha').addEventListener('click', () => {
+  document.getElementById('senha-idle').hidden  = true;
+  document.getElementById('senha-form').hidden  = false;
+  document.getElementById('input-nova-senha').focus();
+});
+
+document.getElementById('btn-cancelar-senha').addEventListener('click', () => {
+  document.getElementById('senha-form').hidden = true;
+  document.getElementById('senha-idle').hidden = false;
+  document.getElementById('input-senha-atual').value    = '';
+  document.getElementById('input-nova-senha').value     = '';
+  document.getElementById('input-confirmar-senha').value = '';
+  clearMsg('msg-senha');
+});
+
+// Save password
+document.getElementById('btn-save-senha').addEventListener('click', async () => {
+  const btn             = document.getElementById('btn-save-senha');
+  const current_password = document.getElementById('input-senha-atual').value || null;
+  const new_password    = document.getElementById('input-nova-senha').value;
+  const confirm         = document.getElementById('input-confirmar-senha').value;
+
+  clearMsg('msg-senha');
+
+  if (!new_password) { setMsg('msg-senha', 'Informe a nova senha'); return; }
+  if (new_password.length < 6) { setMsg('msg-senha', 'A senha deve ter pelo menos 6 caracteres'); return; }
+  if (new_password !== confirm) { setMsg('msg-senha', 'As senhas não coincidem'); return; }
+
+  btn.disabled    = true;
+  btn.textContent = 'Salvando…';
+
+  try {
+    await api('POST', '/auth/change-password', { current_password, new_password });
+    setMsg('msg-senha', 'Senha definida com sucesso.', 'success');
+    document.getElementById('input-senha-atual').value     = '';
+    document.getElementById('input-nova-senha').value      = '';
+    document.getElementById('input-confirmar-senha').value = '';
+    // Update idle text
+    document.getElementById('senha-idle-text').textContent = 'Sua senha está definida.';
+    document.getElementById('btn-definir-senha').textContent = 'Alterar senha';
+    setTimeout(() => {
+      document.getElementById('senha-form').hidden = true;
+      document.getElementById('senha-idle').hidden = false;
+      clearMsg('msg-senha');
+    }, 2000);
+  } catch (e) {
+    setMsg('msg-senha', e.message || 'Erro ao salvar senha');
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Salvar senha';
+  }
+});
+
+// ─── Tab: Plano & Créditos ─────────────────────────────────────────────────────
+
+// Configuração dinâmica de planos (carregada do servidor em init)
+let planosConfig = null;
+
+async function loadPlanosConfig() {
+  try {
+    planosConfig = await fetch(`${API_BASE}/planos/config`).then(r => r.json());
+  } catch {
+    planosConfig = {
+      essencial:    { creditos: 15, preco_mensal: 149, preco_anual: 124, preco_avulso: 9.90 },
+      profissional: { creditos: 35, preco_mensal: 289, preco_anual: 241, preco_avulso: 8.50 },
+      escritorio:   { creditos: 70, preco_mensal: 479, preco_anual: 399, preco_avulso: 7.00 },
+      avulso:       { quantidade: 10, preco: 99.00 },
+    };
+  }
+}
+
+function fmtBRL(n) {
+  return Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function applyPlanosConfigToDOM() {
+  if (!planosConfig) return;
+  const isAnual = document.getElementById('toggle-anual')?.checked;
+
+  ['essencial', 'profissional', 'escritorio'].forEach(plano => {
+    const cfg  = planosConfig[plano];
+    const card = document.querySelector(`[data-plan="${plano}"]`);
+    if (!cfg || !card) return;
+
+    const priceEl = card.querySelector('.plan-price-value');
+    if (priceEl) {
+      priceEl.dataset.mensal = cfg.preco_mensal;
+      priceEl.dataset.anual  = cfg.preco_anual;
+      priceEl.textContent    = `R$${isAnual ? cfg.preco_anual : cfg.preco_mensal}`;
+    }
+
+    const subEl = card.querySelector('.plan-price-sub');
+    if (subEl) {
+      const totalAnual = fmtBRL(cfg.preco_mensal * 10);
+      subEl.dataset.anual = `cobrado anualmente — R$${totalAnual}/ano`;
+      subEl.textContent   = isAnual ? subEl.dataset.anual : '\u00a0';
+    }
+
+    const extraEl = card.querySelector('.plan-feature-extra');
+    if (extraEl) {
+      const carteiraMap = { essencial: '30', profissional: '80', escritorio: '150' };
+      extraEl.textContent =
+        `Ideal para carteiras de até ${carteiraMap[plano]} clientes · Crédito adicional R$${fmtBRL(cfg.preco_avulso)}`;
+    }
+  });
+}
+
+function getPlanCredits(plano) {
+  return planosConfig?.[plano]?.creditos ?? { essencial: 15, profissional: 35, escritorio: 70 }[plano];
+}
+
+function getAvulsosPrice(plano) {
+  const precoAvulso = planosConfig?.[plano]?.preco_avulso
+    ?? planosConfig?.essencial?.preco_avulso
+    ?? 9.90;
+  const totalPacote = planosConfig?.avulso?.preco ?? 99.00;
+  return {
+    total: `R$${fmtBRL(totalPacote)}`,
+    per:   `R$${fmtBRL(precoAvulso)} por crédito`,
+  };
+}
+
+function initPlano(user) {
+  const plano    = (user.plano || 'trial').toLowerCase();
+  const creditos = user.creditos ?? 0;
+  const renovacao = user.plano_renovacao;
+
+  // Apply dynamic prices to DOM first
+  applyPlanosConfigToDOM();
+
+  // Current plan display
+  document.getElementById('plan-name-display').textContent = capitalize(plano);
+
+  const total = getPlanCredits(plano);
+  if (total) {
+    const pct = Math.min(100, Math.round((creditos / total) * 100));
+    document.getElementById('credits-label').textContent = `${creditos} de ${total} créditos disponíveis`;
+    document.getElementById('credits-bar-fill').style.width = `${pct}%`;
+    document.getElementById('credits-bar-wrap').style.display = 'block';
+  } else {
+    document.getElementById('credits-label').textContent = `${creditos} créditos disponíveis`;
+    document.getElementById('credits-bar-wrap').style.display = 'none';
+  }
+
+  if (renovacao) {
+    document.getElementById('plan-renewal').textContent = `Renova em ${fmtDate(renovacao)}`;
+  }
+
+  // Hide manage button for trial
+  if (plano !== 'trial') {
+    document.getElementById('btn-gerenciar-assinatura').hidden = false;
+  }
+
+  // Avulsos pricing (baseado no plano ativo do usuário)
+  const avPrice = getAvulsosPrice(plano);
+  document.getElementById('avulsos-price').textContent      = avPrice.total;
+  document.getElementById('avulsos-per-credit').textContent = avPrice.per;
+
+  // Upsell text based on plan
+  if (plano === 'essencial' || plano === 'profissional' || plano === 'escritorio') {
+    document.getElementById('avulsos-followup-text').textContent =
+      'Apura com frequência? Seu plano já tem créditos inclusos — considere aumentar o volume.';
+  }
+
+  // Mark current plan button
+  document.querySelectorAll('[data-plan-btn]').forEach(btn => {
+    const btnPlan = btn.dataset.planBtn;
+    if (btnPlan === plano) {
+      btn.textContent = 'Plano atual';
+      btn.className   = 'btn-plan current-plan';
+    }
+  });
+}
+
+// Annual toggle
+document.getElementById('toggle-anual').addEventListener('change', function () {
+  const isAnual = this.checked;
+  document.getElementById('label-mensal').classList.toggle('active', !isAnual);
+  document.getElementById('label-anual').classList.toggle('active', isAnual);
+  document.getElementById('badge-savings').style.display = isAnual ? 'inline-flex' : 'none';
+
+  // Re-aplica config dinâmica (atualiza data-attributes e textos)
+  applyPlanosConfigToDOM();
+});
+
+// Buy avulso
+document.getElementById('btn-comprar-avulso').addEventListener('click', () => {
+  document.getElementById('avulsos-followup').classList.add('visible');
+});
+
+document.getElementById('btn-followup-ver-planos').addEventListener('click', () => {
+  document.getElementById('avulsos-followup').classList.remove('visible');
+  document.getElementById('plans-grid').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+document.getElementById('btn-followup-continuar').addEventListener('click', async () => {
+  document.getElementById('avulsos-followup').classList.remove('visible');
+  const btn = document.getElementById('btn-comprar-avulso');
+  await redirectToCheckout(btn, () =>
+    api('POST', '/pagamentos/ip/checkout', { tipo: 'avulso' })
+  );
+});
+
+// ─── Checkout helpers ──────────────────────────────────────────────────────────
+
+async function redirectToCheckout(btn, fetchFn) {
+  if (btn.disabled) return;
+  const original   = btn.textContent;
+  btn.disabled     = true;
+  btn.textContent  = 'Aguarde…';
+
+  try {
+    const data = await fetchFn();
+
+    // Salva payment_id no sessionStorage antes de sair da página
+    if (data.pagamento_id) {
+      sessionStorage.setItem('est_pending_payment_id', data.pagamento_id);
+    }
+
+    const url = data.init_point || data.checkout_url;
+    if (url) {
+      window.location.href = url;
+    } else {
+      toast('URL de checkout não configurada. Entre em contato com o suporte.', 'error');
+      btn.disabled    = false;
+      btn.textContent = original;
+    }
+  } catch (e) {
+    toast(e.message || 'Erro ao iniciar checkout', 'error');
+    btn.disabled    = false;
+    btn.textContent = original;
+  }
+}
+
+// Plan buttons
+document.querySelectorAll('[data-plan-btn]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (btn.classList.contains('current-plan')) return;
+
+    const plano   = btn.dataset.planBtn;
+    const isAnual = document.getElementById('toggle-anual').checked;
+
+    await redirectToCheckout(btn, async () => {
+      if (isAnual) {
+        // Plano anual via InfinityPay
+        return api('POST', '/pagamentos/ip/checkout', { tipo: 'anual', plano });
+      } else {
+        // Mensalidade via Mercado Pago
+        return api('POST', '/pagamentos/mp/assinar', { plano });
+      }
+    });
+  });
+});
+
+// Manage subscription
+document.getElementById('btn-gerenciar-assinatura').addEventListener('click', () => {
+  // Link para o portal do MP — usuário acessa pelo email cadastrado
+  window.open('https://www.mercadopago.com.br/subscriptions', '_blank');
+});
+
+// ─── Tab: Finanças ─────────────────────────────────────────────────────────────
+async function loadFinance() {
+  const container = document.getElementById('finance-content');
+  container.innerHTML = '<div class="finance-empty">Carregando...</div>';
+  try {
+    const data = await api('GET', '/creditos');
+    extrato = data.extrato || [];
+    currentPage = 1;
+    renderFinanceTable();
+  } catch (e) {
+    container.innerHTML = `<div class="finance-empty">${esc(e.message || 'Erro ao carregar histórico')}</div>`;
+  }
+}
+
+function renderFinanceTable() {
+  const container = document.getElementById('finance-content');
+
+  if (!extrato || extrato.length === 0) {
+    container.innerHTML = '<div class="finance-empty">Nenhuma movimentação de créditos ainda.</div>';
+    return;
+  }
+
+  const totalPages = Math.ceil(extrato.length / pageSize);
+  const start      = (currentPage - 1) * pageSize;
+  const pageItems  = extrato.slice(start, start + pageSize);
+
+  const rows = pageItems.map(item => {
+    const delta    = item.delta ?? 0;
+    const cls      = delta >= 0 ? 'delta-positive' : 'delta-negative';
+    const sign     = delta >= 0 ? '+' : '';
+    const motivo   = esc(item.motivo || '—');
+    const data     = fmtDate(item.created_at);
+    return `
+      <tr>
+        <td>${esc(data)}</td>
+        <td>${motivo}</td>
+        <td class="${cls}">${sign}${delta}</td>
+      </tr>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <table class="finance-table">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Descrição</th>
+          <th>Créditos</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${totalPages > 1 ? `
+    <div class="pagination">
+      <button class="pagination-btn" id="page-prev" ${currentPage <= 1 ? 'disabled' : ''}>← Anterior</button>
+      <span class="pagination-info">Página ${currentPage} de ${totalPages}</span>
+      <button class="pagination-btn" id="page-next" ${currentPage >= totalPages ? 'disabled' : ''}>Próxima →</button>
+    </div>` : ''}
+  `;
+
+  if (totalPages > 1) {
+    document.getElementById('page-prev')?.addEventListener('click', () => {
+      if (currentPage > 1) { currentPage--; renderFinanceTable(); }
+    });
+    document.getElementById('page-next')?.addEventListener('click', () => {
+      if (currentPage < totalPages) { currentPage++; renderFinanceTable(); }
+    });
+  }
+}
+
+// ─── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  // 1. Magic link check
+  const params     = new URLSearchParams(window.location.search);
+  const magicToken = params.get('magic');
+
+  if (magicToken) {
+    try {
+      const result = await api('GET', `/auth/verify/${magicToken}`);
+      setToken(result.token);
+      currentUser = result.user ?? result;
+    } catch {
+      toast('Link de acesso inválido ou expirado.', 'error');
+    }
+    // Clean URL
+    const cleanUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, '', cleanUrl);
+  }
+
+  // 2. Auth guard
+  if (!getToken()) {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  try {
+    currentUser = await api('GET', '/auth/me');
+  } catch {
+    clearToken();
+    window.location.href = 'index.html';
+    return;
+  }
+
+  // 3. Render sidebar
+  renderSidebarUser(currentUser);
+
+  // 4. Load plan config (prices/credits from DB) then init tabs
+  await loadPlanosConfig();
+  initPerfil(currentUser);
+  initPlano(currentUser);
+
+  // 5. Nav events
+  document.querySelectorAll('.settings-nav-item').forEach(btn => {
+    btn.addEventListener('click', () => showTab(btn.dataset.tab));
+  });
+
+  // 6. Hash navigation
+  const hash = window.location.hash.replace('#', '') || 'perfil';
+  showTab(hash);
+}
+
+init().catch(console.error);
+
+</script>
+</body>
+</html>
+

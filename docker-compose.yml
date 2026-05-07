@@ -1,0 +1,55 @@
+services:
+  estabilizei-backend:
+    build: .
+    container_name: estabilizei-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENV=production
+      - JWT_SECRET=troque-por-segredo-forte-em-producao
+      - JWT_EXPIRE_DAYS=30
+      - BONUS_CADASTRO=3
+    volumes:
+      - estabilizei-data:/var/data/estabilizei
+    labels:
+      - "traefik.enable=true"
+
+      # ── backend.estabilizei.com.br (API) ──────────────────────────────────
+      - "traefik.http.routers.est-backend.rule=Host(`backend.estabilizei.com.br`)"
+      - "traefik.http.routers.est-backend.entrypoints=websecure"
+      - "traefik.http.routers.est-backend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.est-backend.service=est-backend"
+      - "traefik.http.services.est-backend.loadbalancer.server.port=8000"
+
+      - "traefik.http.routers.est-backend-http.rule=Host(`backend.estabilizei.com.br`)"
+      - "traefik.http.routers.est-backend-http.entrypoints=web"
+      - "traefik.http.routers.est-backend-http.middlewares=est-redirect"
+      - "traefik.http.routers.est-backend-http.service=est-backend"
+
+      # ── apurei.com (front servido pelo mesmo container) ──────────────────
+      - "traefik.http.routers.est-front.rule=Host(`apurei.com`)"
+      - "traefik.http.routers.est-front.entrypoints=websecure"
+      - "traefik.http.routers.est-front.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.est-front.service=est-front"
+      - "traefik.http.services.est-front.loadbalancer.server.port=8000"
+
+      - "traefik.http.routers.est-front-http.rule=Host(`apurei.com`)"
+      - "traefik.http.routers.est-front-http.entrypoints=web"
+      - "traefik.http.routers.est-front-http.middlewares=est-redirect"
+      - "traefik.http.routers.est-front-http.service=est-front"
+
+      # ── Middleware de redirect (escopo deste compose) ───────────────────────
+      - "traefik.http.middlewares.est-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.est-redirect.redirectscheme.permanent=true"
+
+    networks:
+      - web
+
+volumes:
+  estabilizei-data:
+
+networks:
+  web:
+    external: true
+

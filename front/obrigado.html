@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Processando pagamento — Apurei</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* ─── Layout centralizado (sem sidebar) ──────────────────────────────── */
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--color-bg);
+    }
+
+    .obrigado-wrap {
+      width: 100%;
+      max-width: 480px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+
+    /* ─── Logo / marca ───────────────────────────────────────────────────── */
+    .obrigado-brand {
+      font-size: var(--font-size-sm);
+      font-weight: 600;
+      color: var(--color-text-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 40px;
+    }
+
+    /* ─── Card principal ─────────────────────────────────────────────────── */
+    .obrigado-card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: 48px 40px;
+      width: 100%;
+      text-align: center;
+      box-shadow: var(--shadow-md);
+    }
+
+    /* ─── Ícone de estado ────────────────────────────────────────────────── */
+    .state-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+      transition: background 0.3s;
+    }
+
+    .state-icon.pending {
+      background: var(--color-border);
+    }
+
+    .state-icon.success {
+      background: var(--color-success-bg);
+      border: 1.5px solid #bbf7d0;
+    }
+
+    .state-icon.timeout {
+      background: #fffbeb;
+      border: 1.5px solid #fde68a;
+    }
+
+    .state-icon.error {
+      background: var(--color-danger-bg);
+      border: 1.5px solid #fecaca;
+    }
+
+    /* Spinner dentro do ícone no estado pendente */
+    .state-icon.pending::after {
+      content: '';
+      width: 28px;
+      height: 28px;
+      border: 3px solid rgba(26, 26, 26, 0.15);
+      border-top-color: var(--color-text);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ─── Textos ─────────────────────────────────────────────────────────── */
+    .obrigado-title {
+      font-size: var(--font-size-xl);
+      font-weight: 500;
+      color: var(--color-text);
+      letter-spacing: -0.025em;
+      margin-bottom: 8px;
+      line-height: 1.2;
+    }
+
+    .obrigado-subtitle {
+      font-size: var(--font-size-sm);
+      color: var(--color-text-muted);
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    /* ─── Progresso / tentativas ─────────────────────────────────────────── */
+    .polling-info {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: var(--font-size-xs);
+      color: var(--color-text-subtle);
+      margin-bottom: 28px;
+    }
+
+    .polling-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--color-border-strong);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    .polling-dot:nth-child(2) { animation-delay: 0.2s; }
+    .polling-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes pulse {
+      0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+      40%           { opacity: 1;   transform: scale(1); }
+    }
+
+    /* ─── Botões ─────────────────────────────────────────────────────────── */
+    .obrigado-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 28px;
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: opacity 0.12s;
+      border: none;
+      text-decoration: none;
+    }
+
+    .obrigado-btn.primary {
+      background: var(--color-accent);
+      color: var(--color-accent-text);
+    }
+
+    .obrigado-btn.primary:hover { opacity: 0.85; }
+
+    .obrigado-btn.outline {
+      background: transparent;
+      color: var(--color-text-muted);
+      border: 1px solid var(--color-border-strong);
+    }
+
+    .obrigado-btn.outline:hover {
+      color: var(--color-text);
+      border-color: var(--color-text);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    /* ─── Detalhe do plano ───────────────────────────────────────────────── */
+    .plan-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: var(--radius-full);
+      font-size: var(--font-size-xs);
+      font-weight: 600;
+      background: var(--color-success-bg);
+      color: var(--color-success);
+      border: 1px solid #bbf7d0;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="obrigado-wrap">
+
+  <div class="obrigado-brand">Apurei</div>
+
+  <div class="obrigado-card" id="obrigado-card">
+
+    <!-- Estado: pendente (default) -->
+    <div id="state-pending">
+      <div class="state-icon pending" id="state-icon"></div>
+      <h1 class="obrigado-title">Aguardando confirmação</h1>
+      <p class="obrigado-subtitle">
+        Estamos verificando seu pagamento.<br>
+        Isso pode levar alguns instantes.
+      </p>
+      <div class="polling-info">
+        <div class="polling-dot"></div>
+        <div class="polling-dot"></div>
+        <div class="polling-dot"></div>
+        <span id="polling-attempt">Verificando…</span>
+      </div>
+      <div class="btn-row">
+        <a href="account.html#financas" class="obrigado-btn outline">Ver histórico</a>
+      </div>
+    </div>
+
+    <!-- Estado: confirmado -->
+    <div id="state-success" hidden>
+      <div class="state-icon success">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <path d="M7 14l5 5 9-9" stroke="var(--color-success)" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="plan-pill" id="success-pill" hidden>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <circle cx="5" cy="5" r="4" fill="var(--color-success)"/>
+        </svg>
+        <span id="success-plan-name"></span>
+      </div>
+      <h1 class="obrigado-title">Pagamento confirmado!</h1>
+      <p class="obrigado-subtitle" id="success-subtitle">
+        Seus créditos já estão disponíveis na sua conta.
+      </p>
+      <div class="btn-row">
+        <a href="index.html" class="obrigado-btn primary">Fazer uma apuração</a>
+        <a href="account.html#plano" class="obrigado-btn outline">Ver minha conta</a>
+      </div>
+    </div>
+
+    <!-- Estado: timeout -->
+    <div id="state-timeout" hidden>
+      <div class="state-icon timeout">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <path d="M14 10v5M14 18h.01" stroke="#92400e" stroke-width="2.5"
+                stroke-linecap="round"/>
+          <circle cx="14" cy="14" r="11" stroke="#92400e" stroke-width="2"/>
+        </svg>
+      </div>
+      <h1 class="obrigado-title">Aguardando processamento</h1>
+      <p class="obrigado-subtitle">
+        Seu pagamento pode levar alguns minutos para ser processado.<br>
+        Se já pagou, aguarde e consulte seu histórico em instantes.
+      </p>
+      <div class="btn-row">
+        <a href="account.html#financas" class="obrigado-btn primary">Ver histórico</a>
+        <a href="account.html#plano" class="obrigado-btn outline">Minha conta</a>
+      </div>
+    </div>
+
+    <!-- Estado: erro -->
+    <div id="state-error" hidden>
+      <div class="state-icon error">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <path d="M10 10l8 8M18 10l-8 8" stroke="var(--color-danger)" stroke-width="2.5"
+                stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h1 class="obrigado-title">Algo deu errado</h1>
+      <p class="obrigado-subtitle" id="error-msg">
+        Não conseguimos identificar seu pagamento.<br>
+        Entre em contato se o valor foi debitado.
+      </p>
+      <div class="btn-row">
+        <a href="account.html#plano" class="obrigado-btn primary">Tentar novamente</a>
+      </div>
+    </div>
+
+  </div><!-- /obrigado-card -->
+
+</div>
+
+<div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+<script type="module">
+
+// ─── Config ────────────────────────────────────────────────────────────────────
+const IS_LOCAL = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const API_BASE = IS_LOCAL ? '' : 'https://backend.estabilizei.com.br';
+
+const POLL_INTERVAL_MS = 5000;    // 5 segundos
+const POLL_MAX         = 144;     // 12 minutos
+
+// ─── Token ─────────────────────────────────────────────────────────────────────
+const getToken = () => localStorage.getItem('est_token');
+
+// ─── API ───────────────────────────────────────────────────────────────────────
+async function api(method, path) {
+  const headers = {};
+  const token   = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}${path}`, { method, headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Erro ${res.status}`);
+  }
+  return res.json();
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+function capitalize(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+}
+
+function showState(state) {
+  ['pending', 'success', 'timeout', 'error'].forEach(s => {
+    document.getElementById(`state-${s}`).hidden = s !== state;
+  });
+}
+
+// ─── Parâmetros da URL ─────────────────────────────────────────────────────────
+const params     = new URLSearchParams(window.location.search);
+const paymentId  = params.get('payment_id')
+  || sessionStorage.getItem('est_pending_payment_id');
+const gateway    = params.get('gateway') || '';
+const plano      = params.get('plano')   || '';
+
+// ─── Sem payment_id — pode ser redirect direto do gateway ──────────────────────
+// Verifica se há payment_id salvo (colocado pelo frontend antes de redirecionar)
+function resolvePaymentId() {
+  if (paymentId) return paymentId;
+  return sessionStorage.getItem('est_pending_payment_id');
+}
+
+// ─── Polling ───────────────────────────────────────────────────────────────────
+let attempts    = 0;
+let pollTimer   = null;
+
+async function checkStatus(pid) {
+  try {
+    const data = await api('GET', `/pagamentos/${pid}/status`);
+
+    if (data.status === 'confirmado') {
+      clearInterval(pollTimer);
+      sessionStorage.removeItem('est_pending_payment_id');
+      onConfirmado(data);
+      return;
+    }
+
+    if (data.status === 'cancelado' || data.status === 'erro_criacao') {
+      clearInterval(pollTimer);
+      onErro('Pagamento não processado. Por favor, tente novamente.');
+      return;
+    }
+
+    // Ainda pendente — continua polling
+    attempts++;
+    const restante = Math.max(0, POLL_MAX - attempts);
+    document.getElementById('polling-attempt').textContent =
+      `Verificação ${attempts} de ${POLL_MAX} — ainda aguardando…`;
+
+    if (attempts >= POLL_MAX) {
+      clearInterval(pollTimer);
+      onTimeout();
+    }
+
+  } catch (e) {
+    // Se o token expirou ou pagamento não encontrado:
+    if (e.message.includes('404') || e.message.includes('401')) {
+      clearInterval(pollTimer);
+      onErro(e.message);
+    }
+    // Outros erros (rede) — mantém tentando
+  }
+}
+
+function onConfirmado(data) {
+  // Monta mensagem conforme tipo
+  const tipo = data.tipo || '';
+  let subtitulo = 'Seus créditos já estão disponíveis na sua conta.';
+  let pillText  = '';
+
+  if (tipo.startsWith('mp_mensal_') || tipo.startsWith('ip_anual_')) {
+    const pl = plano || tipo.replace('mp_mensal_', '').replace('ip_anual_', '');
+    subtitulo = `Plano ${capitalize(pl)} ativo. Seus créditos mensais foram creditados.`;
+    pillText  = `Plano ${capitalize(pl)} ativo`;
+  } else if (tipo === 'ip_avulso') {
+    subtitulo = '10 créditos adicionados à sua conta.';
+  }
+
+  document.getElementById('success-subtitle').textContent = subtitulo;
+
+  if (pillText) {
+    document.getElementById('success-plan-name').textContent = pillText;
+    document.getElementById('success-pill').hidden = false;
+  }
+
+  showState('success');
+
+  // Redireciona para conta após 4 segundos
+  setTimeout(() => {
+    window.location.href = 'account.html#plano';
+  }, 4000);
+}
+
+function onTimeout() {
+  showState('timeout');
+}
+
+function onErro(msg) {
+  document.getElementById('error-msg').textContent = msg ||
+    'Não conseguimos identificar seu pagamento. Entre em contato se o valor foi debitado.';
+  showState('error');
+}
+
+// ─── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  const pid = resolvePaymentId();
+
+  if (!pid) {
+    // Sem payment_id — pode ter chegado aqui via redirect do gateway sem parâmetros
+    // Tenta ler do sessionStorage
+    const stored = sessionStorage.getItem('est_pending_payment_id');
+    if (!stored) {
+      onErro('Pagamento não identificado. Volte à sua conta para verificar o status.');
+      return;
+    }
+  }
+
+  if (!getToken()) {
+    // Sem token — redireciona para login
+    window.location.href = `index.html?next=obrigado.html?payment_id=${pid}`;
+    return;
+  }
+
+  // Primeira verificação imediata
+  await checkStatus(pid);
+
+  // Inicia polling
+  pollTimer = setInterval(() => checkStatus(pid), POLL_INTERVAL_MS);
+}
+
+init().catch(err => {
+  console.error(err);
+  onErro('Erro inesperado. Verifique sua conta em alguns instantes.');
+});
+
+</script>
+</body>
+</html>
+
