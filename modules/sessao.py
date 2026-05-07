@@ -634,25 +634,42 @@ def _completar_fontes_com_inativos(
             sessao.get("config", {}).get("grupos_override_log", []),
             sessao.get("config", {}).get("grupos_override"),
         )
-        # Deduplica por grupo_id, preserva motivo mais representativo
-        vistos: Dict[str, Dict] = {}
+        grupo_ids_inativos = {f.get("grupo_id", "") for f in fontes_inativas}
+
+        # Monta lista de entradas para agrupar_por_pagador — mesmo Levenshtein
+        # que o apurar() usa. Cada item carrega o motivo para recuperar depois.
+        entradas_excl = []
+        motivo_por_desc: Dict[str, str] = {}
         for ex in excluidos_sistema:
-            gid = ex.get("grupo_id") or normalizar(ex.get("pagador") or "")
-            if not gid or gid in grupo_ids_ativos:
+            pagador = ex.get("pagador") or ""
+            if not pagador:
                 continue
-            if gid in {f.get("grupo_id") for f in fontes_inativas}:
+            motivo_por_desc[normalizar(pagador)] = ex.get("motivo") or "desconhecido"
+            entradas_excl.append({"origem_destino": pagador, "descricao": pagador})
+
+        grupos_excl = agrupar_por_pagador(entradas_excl) if entradas_excl else {}
+
+        # Resolve motivo dominante por grupo após o agrupamento Levenshtein
+        ids_sistema: List[str] = []
+        vistos_agrupados: Dict[str, Dict] = {}
+        for gid, lancs in grupos_excl.items():
+            if gid in grupo_ids_ativos or gid in grupo_ids_inativos:
                 continue
-            if gid not in vistos:
-                vistos[gid] = {"grupo_id": gid, "pagador": ex.get("pagador") or gid, "motivo": ex.get("motivo") or "desconhecido", "count": 1}
-            else:
-                vistos[gid]["count"] += 1
+            pagador = lancs[0].get("descricao") or gid
+            # Motivo: usa o do primeiro lançamento que bater exato, senão o mais comum
+            motivo = motivo_por_desc.get(gid) or next(
+                (motivo_por_desc[normalizar(l["descricao"])]
+                 for l in lancs if normalizar(l["descricao"]) in motivo_por_desc),
+                "desconhecido"
+            )
+            ids_sistema.append(gid)
+            vistos_agrupados[gid] = {"pagador": pagador, "motivo": motivo}
 
         # Salva na sessão para que o toggle saiba quais são system_excluded
-        ids_sistema = list(vistos.keys())
         sessao.setdefault("config", {})["grupos_excluidos_sistema"] = ids_sistema
 
         cache_disp = sessao.get("config", {}).get("grupos_display_cache", {})
-        for gid, meta in vistos.items():
+        for gid, meta in vistos_agrupados.items():
             # Se já foi forçado estável pelo usuário, não exibe mais como excluído
             if grupos_override_atual.get(gid) == "estavel":
                 continue
