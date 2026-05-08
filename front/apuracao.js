@@ -296,14 +296,18 @@ function renderMonthChips() {
 }
 
 function _mergeFontes(fontes) {
-  for (const f of fontes) {
-    const idx = knownFontes.findIndex(k => k.pagador === f.pagador);
-    if (idx >= 0) {
-      knownFontes[idx] = { ...knownFontes[idx], ...f };
-    } else {
-      knownFontes.push({ ...f });
-    }
+  // Reconstrói sempre do zero — acumular entre renders cria duplicatas.
+  // Chave de identidade: grupo_id (estável, único por grupo).
+  const byId = {};
+  for (const f of knownFontes) {
+    const key = f.grupo_id || f.pagador;
+    byId[key] = f;
   }
+  for (const f of fontes) {
+    const key = f.grupo_id || f.pagador;
+    byId[key] = { ...(byId[key] || {}), ...f };
+  }
+  knownFontes = Object.values(byId);
 }
 
 function _grupoIsActive(pagador) {
@@ -334,7 +338,8 @@ function _sourceMatches(s, pagador) {
     if (orVal && orVal.includes(pag)) return true;
     if (orVal && pag.includes(orVal)) return true;
   }
-  return desc.includes(pag) || pag.includes(desc);
+  // pag.includes(desc) causava falso positivo quando desc é substring curta do pagador
+  return desc.includes(pag);
 }
 
 function renderSourceCards() {
