@@ -342,55 +342,65 @@ function _sourceMatches(s, pagador) {
   return desc.includes(pag);
 }
 
+// Estado de expansão dos cards de tipo de exclusão (persiste entre renders)
+const _exclExpanded = {};
+
 function renderSourceCards() {
   const wrap = document.getElementById('source-cards');
   if (!currentSession) { wrap.innerHTML = ''; return; }
 
   _mergeFontes(currentLaudo?.fontes || []);
-
   if (knownFontes.length === 0) { wrap.innerHTML = ''; return; }
 
   const MOTIVO_LABEL = {
-    auto_transferencia          : 'auto transferência',
-    auto_investimento           : 'auto investimento',
-    circular                    : 'circular',
-    circular_longitudinal       : 'circular',
-    circular_longitudinal_manual: 'circular',
-    variancia                   : 'variação alta',
-    ruido                       : 'variação alta',
-    sem_historico               : 'sem histórico',
-    flag_usuario                : 'marcado manualmente',
-    duplicado_manual            : 'duplicado',
+    auto_transferencia          : 'Auto transferência',
+    auto_investimento           : 'Auto transferência',
+    circular                    : 'Circular',
+    circular_longitudinal       : 'Circular',
+    circular_longitudinal_manual: 'Circular',
+    variancia                   : 'Variação alta',
+    ruido                       : 'Variação alta',
+    sem_historico               : 'Sem histórico',
+    flag_usuario                : 'Marcado manualmente',
+    duplicado_manual            : 'Duplicado',
   };
 
-  wrap.innerHTML = knownFontes.map((f) => {
-    const isSelected   = activeSource === f.pagador;
-    // Grupos excluídos pelo sistema têm lançamentos active=true na sessão
-    // (_grupoIsActive leria true), mas o cálculo os rejeitou — exibir como inativos.
-    const grupoAtivo   = f.system_excluded ? false : _grupoIsActive(f.pagador);
-    const isSysExcl    = !!f.system_excluded;
-    const barW         = Math.min(Math.max(f.participacao_pct || 0, 0), 100).toFixed(1);
-    const toggleLabel  = grupoAtivo ? 'Desativar' : 'Ativar';
-    const toggleTitle  = grupoAtivo
-      ? 'Desativar todos os lançamentos deste grupo'
-      : isSysExcl
-        ? `Forçar inclusão (excluído por: ${MOTIVO_LABEL[f.motivo_exclusao] || f.motivo_exclusao})`
-        : 'Ativar todos os lançamentos deste grupo';
-    const cv       = f.cv_pct != null ? Math.round(f.cv_pct) : null;
-    const cvClass  = cv === null ? 'cv-badge--unknown' : cv < 50 ? 'cv-badge--low' : cv <= 80 ? 'cv-badge--mid' : 'cv-badge--high';
-    const barClass = cv === null ? '' : cv < 50 ? 'source-card-bar--low' : cv <= 80 ? 'source-card-bar--mid' : 'source-card-bar--high';
+  // ── Separar fontes ativas dos excluídos pelo sistema ──────────────────────
+  // Fontes ativas: identidade = pagador → card individual
+  // Excluídos: identidade = tipo de motivo → card de tipo (expansível)
+  const fontesAtivas = knownFontes.filter(f => !f.system_excluded);
+  const sysExcluidos = knownFontes.filter(f => !!f.system_excluded);
 
-    const motivoBadge = isSysExcl && !grupoAtivo
-      ? `<span class="source-excl-badge" title="Excluído automaticamente pelo sistema">excluído · ${esc(MOTIVO_LABEL[f.motivo_exclusao] || f.motivo_exclusao)}</span>`
-      : '';
+  // Agrupar excluídos por tipo de motivo
+  const porTipo = {};
+  for (const f of sysExcluidos) {
+    const tipo = MOTIVO_LABEL[f.motivo_exclusao] || f.motivo_exclusao || 'Outro';
+    if (!porTipo[tipo]) porTipo[tipo] = [];
+    porTipo[tipo].push(f);
+  }
 
+  // ── Render: fontes ativas (comportamento original) ─────────────────────────
+  const htmlAtivas = fontesAtivas.map((f) => {
+    const isSelected  = activeSource === f.pagador;
+    const grupoAtivo  = _grupoIsActive(f.pagador);
+    const barW        = Math.min(Math.max(f.participacao_pct || 0, 0), 100).toFixed(1);
+    const toggleLabel = grupoAtivo ? 'Desativar' : 'Ativar';
+    const cv          = f.cv_pct != null ? Math.round(f.cv_pct) : null;
+    const cvClass     = cv === null ? 'cv-badge--unknown' : cv < 50 ? 'cv-badge--low' : cv <= 80 ? 'cv-badge--mid' : 'cv-badge--high';
+    const barClass    = cv === null ? '' : cv < 50 ? 'source-card-bar--low' : cv <= 80 ? 'source-card-bar--mid' : 'source-card-bar--high';
     return `
-      <div class="source-card${isSelected ? ' active' : ''}${grupoAtivo ? '' : ' source-card-disabled'}${isSysExcl && !grupoAtivo ? ' source-card-sys-excl' : ''}" data-source="${esc(f.pagador)}">
+      <div class="source-card${isSelected ? ' active' : ''}${grupoAtivo ? '' : ' source-card-disabled'}" data-source="${esc(f.pagador)}">
         <div class="source-card-header">
           <span class="source-card-name" title="${esc(f.pagador)}">${esc(f.pagador)}</span>
-          <button class="source-card-toggle${grupoAtivo ? '' : ' source-card-toggle-off'}" data-action="toggle-grupo" data-grupo-id="${esc(f.grupo_id || '')}" data-pagador="${esc(f.pagador || '')}" data-system-excluded="${isSysExcl ? '1' : '0'}" data-active="${grupoAtivo ? '0' : '1'}" title="${toggleTitle}">${toggleLabel}</button>
+          <button class="source-card-toggle${grupoAtivo ? '' : ' source-card-toggle-off'}"
+            data-action="toggle-grupo"
+            data-grupo-id="${esc(f.grupo_id || '')}"
+            data-pagador="${esc(f.pagador || '')}"
+            data-system-excluded="0"
+            data-active="${grupoAtivo ? '0' : '1'}"
+            title="${grupoAtivo ? 'Desativar todos os lançamentos deste grupo' : 'Ativar todos os lançamentos deste grupo'}"
+          >${toggleLabel}</button>
         </div>
-        ${motivoBadge}
         <span class="source-card-val">${fmtBRL(f.renda_base)}</span>
         <div class="source-card-meta">
           <span class="source-card-regularidade">${f.regularidade ?? ''}</span>
@@ -399,10 +409,44 @@ function renderSourceCards() {
         <div class="source-card-bar-wrap">
           <div class="source-card-bar ${barClass}" style="width:${barW}%"></div>
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('');
 
+  // ── Render: cards de tipo de exclusão ─────────────────────────────────────
+  const htmlExcl = Object.entries(porTipo).map(([tipo, grupos]) => {
+    const expanded = !!_exclExpanded[tipo];
+    const lista = expanded
+      ? grupos.map(f => `
+        <div class="excl-type-item">
+          <span class="excl-type-item-name" title="${esc(f.pagador)}">${esc(f.pagador)}</span>
+          <button class="excl-type-item-btn"
+            data-action="toggle-grupo"
+            data-grupo-id="${esc(f.grupo_id || '')}"
+            data-pagador="${esc(f.pagador || '')}"
+            data-system-excluded="1"
+            data-active="1"
+            title="Forçar inclusão deste grupo">Ativar</button>
+        </div>`).join('')
+      : '';
+    return `
+      <div class="excl-type-card" data-excl-tipo="${esc(tipo)}">
+        <div class="excl-type-header">
+          <span class="excl-type-name">${esc(tipo)}</span>
+          <span class="excl-type-count">${grupos.length} grupo${grupos.length !== 1 ? 's' : ''}</span>
+        </div>
+        ${expanded ? `<div class="excl-type-list">${lista}</div>` : ''}
+        <button class="excl-type-expand" data-excl-tipo="${esc(tipo)}">${expanded ? 'fechar ▴' : 'ver grupos ▾'}</button>
+      </div>`;
+  }).join('');
+
+  // Separador visual entre fontes e excluídos
+  const separador = sysExcluidos.length > 0
+    ? `<div class="excl-section-label">Excluídos pelo sistema</div>${htmlExcl}`
+    : '';
+
+  wrap.innerHTML = htmlAtivas + separador;
+
+  // ── Eventos: clique nas fontes ativas ─────────────────────────────────────
   wrap.querySelectorAll('.source-card').forEach(card => {
     card.addEventListener('click', e => {
       if (e.target.closest('[data-action="toggle-grupo"]')) return;
@@ -414,16 +458,27 @@ function renderSourceCards() {
     });
   });
 
+  // ── Eventos: expand dos cards de tipo de exclusão ─────────────────────────
+  wrap.querySelectorAll('.excl-type-expand').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const tipo = btn.dataset.exclTipo;
+      _exclExpanded[tipo] = !_exclExpanded[tipo];
+      renderSourceCards();
+    });
+  });
+
+  // ── Eventos: toggle-grupo (fontes ativas + itens individuais nos tipos) ────
   wrap.querySelectorAll('[data-action="toggle-grupo"]').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const grupo_id = btn.dataset.grupoId;
       const pagador  = btn.dataset.pagador;
       const active   = btn.dataset.active === '1';
+      const isSys    = btn.dataset.systemExcluded === '1';
 
-      // Optimistic update: aplica o toggle localmente antes da resposta do servidor.
-      // O card responde imediatamente; métricas e chips esperam o servidor.
-      if (currentSession?.meses) {
+      // Optimistic update apenas para fontes ativas (não para sys-excl)
+      if (!isSys && currentSession?.meses) {
         for (const lancs of Object.values(currentSession.meses)) {
           for (const lanc of Object.values(lancs)) {
             const s = lanc.state;
@@ -434,7 +489,6 @@ function renderSourceCards() {
         renderSourceCards();
       }
 
-      // Quando desativa, envia os valores atuais para cache de exibição
       const fonte = knownFontes.find(f => f.grupo_id === grupo_id || f.pagador === pagador);
       const display_cache = (!active && fonte) ? {
         renda_base  : fonte.renda_base  ?? null,
@@ -446,14 +500,15 @@ function renderSourceCards() {
     });
   });
 
+  // ── Ver mais / ver menos (somente para fontes ativas) ─────────────────────
   wrap.parentNode.querySelector('.source-ver-mais-btn')?.remove();
   requestAnimationFrame(() => {
-    const cards = [...wrap.querySelectorAll('.source-card')];
-    if (cards.length === 0) return;
+    const activeCards = [...wrap.querySelectorAll('.source-card')];
+    if (activeCards.length === 0) return;
     wrap.parentNode.querySelector('.source-ver-mais-btn')?.remove();
 
-    const firstTop = cards[0].getBoundingClientRect().top;
-    const hasMultipleRows = cards.some(c => c.getBoundingClientRect().top > firstTop + 4);
+    const firstTop = activeCards[0].getBoundingClientRect().top;
+    const hasMultipleRows = activeCards.some(c => c.getBoundingClientRect().top > firstTop + 4);
 
     if (!hasMultipleRows) {
       wrap.style.maxHeight = '';
@@ -462,19 +517,18 @@ function renderSourceCards() {
     }
 
     if (!sourcesExpanded) {
-      const firstRowCards = cards.filter(c => c.getBoundingClientRect().top <= firstTop + 4);
-      const lastFirstRowCard = firstRowCards[firstRowCards.length - 1];
+      const firstRowCards = activeCards.filter(c => c.getBoundingClientRect().top <= firstTop + 4);
+      const last = firstRowCards[firstRowCards.length - 1];
       const wrapTop = wrap.getBoundingClientRect().top;
-      wrap.style.maxHeight = (lastFirstRowCard.getBoundingClientRect().bottom - wrapTop) + 'px';
+      wrap.style.maxHeight = (last.getBoundingClientRect().bottom - wrapTop) + 'px';
       wrap.style.overflow  = 'hidden';
     } else {
       wrap.style.maxHeight = '';
       wrap.style.overflow  = '';
     }
 
-    const hasExcluded = knownFontes.some(f => f.system_excluded || !_grupoIsActive(f.pagador));
     const verMaisBtn = document.createElement('button');
-    verMaisBtn.className   = 'source-ver-mais-btn' + ((!sourcesExpanded && hasExcluded) ? ' has-excluded' : '');
+    verMaisBtn.className   = 'source-ver-mais-btn';
     verMaisBtn.textContent = sourcesExpanded ? 'ver menos' : 'ver mais';
     verMaisBtn.addEventListener('click', () => {
       sourcesExpanded = !sourcesExpanded;
