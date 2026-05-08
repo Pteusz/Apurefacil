@@ -382,12 +382,6 @@ async def mutate_session(user_id: str, session_id: str, mutation: Dict) -> Dict:
     periodo_inicio = _fmt_mes(chaves[0])  if chaves else "—"
     periodo_fim    = _fmt_mes(chaves[-1]) if chaves else "—"
     laudo_result   = montar_laudo(apuracao_result, titular, periodo_inicio, periodo_fim)
-    laudo_result["fontes"] = _completar_fontes_com_inativos(
-        sessao,
-        laudo_result.get("fontes", []),
-        apuracao_result.get("excluidos", []),
-    )
-
     return {
         "sessao"  : _session_view(sessao, apuracao_result.get("lancamentos_grupo")),
         "apuracao": apuracao_result,
@@ -548,12 +542,6 @@ async def calcular_estado(user_id: str, session_id: str) -> Dict:
     periodo_inicio = _fmt_mes(chaves[0])  if chaves else "—"
     periodo_fim    = _fmt_mes(chaves[-1]) if chaves else "—"
     laudo_result   = montar_laudo(apuracao_result, titular, periodo_inicio, periodo_fim)
-    laudo_result["fontes"] = _completar_fontes_com_inativos(
-        sessao,
-        laudo_result.get("fontes", []),
-        apuracao_result.get("excluidos", []),
-    )
-
     return {
         "sessao"  : _session_view(sessao, apuracao_result.get("lancamentos_grupo")),
         "apuracao": apuracao_result,
@@ -563,132 +551,6 @@ async def calcular_estado(user_id: str, session_id: str) -> Dict:
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
-
-def _completar_fontes_com_inativos(
-    sessao: Dict,
-    fontes_ativas: List[Dict],
-    excluidos_sistema: Optional[List[Dict]] = None,
-) -> List[Dict]:
-    """
-    Garante que o resultado sempre contenha todos os grupos da sessão —
-    ativos, inativos e excluídos pelo sistema. Cada grupo preserva seu estado.
-
-    O cálculo (apurar) roda apenas sobre os lançamentos ativos — isso não muda.
-    O resultado final inclui grupos que não participaram da conta para que a
-    tela os exiba com estado desligado ou com o motivo de exclusão do sistema.
-    """
-    grupo_ids_ativos = {f.get("grupo_id", "") for f in fontes_ativas}
-
-    # Coleta entradas inativas (valor > 0, active=False)
-    entradas_inativas = []
-    for mes, lancs in sessao.get("meses", {}).items():
-        for lanc_data in lancs.values():
-            versions = lanc_data.get("versions", [])
-            if not versions:
-                continue
-            state = versions[-1]["state"]
-            valor = state.get("valor", 0) or 0.0
-            if valor <= 0:
-                continue
-            if state.get("active", True):
-                continue
-            entradas_inativas.append({
-                "origem_destino": state.get("descricao") or "",
-                "descricao"     : state.get("descricao") or "",
-            })
-
-    if not entradas_inativas:
-        return fontes_ativas
-
-    # Agrupa pelo mesmo Levenshtein usado em apurar()
-    grupos = agrupar_por_pagador(entradas_inativas)
-
-    display_cache = sessao.get("config", {}).get("grupos_display_cache", {})
-
-    fontes_inativas = []
-    for grupo_id, lancs in grupos.items():
-        if grupo_id in grupo_ids_ativos:
-            continue  # já está no resultado ativo
-        # Usa a descrição original (não normalizada) como label do grupo
-        pagador = lancs[0].get("descricao") or grupo_id
-        cache   = display_cache.get(grupo_id, {})
-        fontes_inativas.append({
-            "grupo_id"        : grupo_id,
-            "pagador"         : pagador,
-            "renda_base"      : cache.get("renda_base", 0.0),
-            "participacao_pct": 0.0,
-            "cv_pct"          : cache.get("cv_pct"),
-            "regularidade"    : cache.get("regularidade", "0/0"),
-            "aparicoes"       : 0,
-            "active"          : False,
-            "faixa_mensal"    : {"min": 0.0, "max": 0.0},
-        })
-
-    # ── Grupos excluídos pelo sistema ────────────────────────────────────────
-    # Distintos dos inativos (active=False pelo usuário): estes têm active=True
-    # mas foram descartados pelo cálculo (auto_transferencia, circular, etc.).
-    # Persistimos os grupo_ids para que o toggle saiba acionar grupos_override.
-    fontes_excluidas_sistema: List[Dict] = []
-    if excluidos_sistema:
-        grupos_override_atual = _resolve_grupos_override(
-            sessao.get("config", {}).get("grupos_override_log", []),
-            sessao.get("config", {}).get("grupos_override"),
-        )
-        grupo_ids_inativos = {f.get("grupo_id", "") for f in fontes_inativas}
-
-        # Monta lista de entradas para agrupar_por_pagador — mesmo Levenshtein
-        # que o apurar() usa. Cada item carrega o motivo para recuperar depois.
-        entradas_excl = []
-        motivo_por_desc: Dict[str, str] = {}
-        for ex in excluidos_sistema:
-            pagador = ex.get("pagador") or ""
-            if not pagador:
-                continue
-            motivo_por_desc[normalizar(pagador)] = ex.get("motivo") or "desconhecido"
-            entradas_excl.append({"origem_destino": pagador, "descricao": pagador})
-
-        grupos_excl = agrupar_por_pagador(entradas_excl) if entradas_excl else {}
-
-        # Resolve motivo dominante por grupo após o agrupamento Levenshtein
-        ids_sistema: List[str] = []
-        vistos_agrupados: Dict[str, Dict] = {}
-        for gid, lancs in grupos_excl.items():
-            if gid in grupo_ids_ativos or gid in grupo_ids_inativos:
-                continue
-            pagador = lancs[0].get("descricao") or gid
-            # Motivo: usa o do primeiro lançamento que bater exato, senão o mais comum
-            motivo = motivo_por_desc.get(gid) or next(
-                (motivo_por_desc[normalizar(l["descricao"])]
-                 for l in lancs if normalizar(l["descricao"]) in motivo_por_desc),
-                "desconhecido"
-            )
-            ids_sistema.append(gid)
-            vistos_agrupados[gid] = {"pagador": pagador, "motivo": motivo}
-
-        # Salva na sessão para que o toggle saiba quais são system_excluded
-        sessao.setdefault("config", {})["grupos_excluidos_sistema"] = ids_sistema
-
-        cache_disp = sessao.get("config", {}).get("grupos_display_cache", {})
-        for gid, meta in vistos_agrupados.items():
-            # Se já foi forçado estável pelo usuário, não exibe mais como excluído
-            if grupos_override_atual.get(gid) == "estavel":
-                continue
-            cache = cache_disp.get(gid, {})
-            fontes_excluidas_sistema.append({
-                "grupo_id"        : gid,
-                "pagador"         : meta["pagador"],
-                "renda_base"      : cache.get("renda_base", 0.0),
-                "participacao_pct": 0.0,
-                "cv_pct"          : cache.get("cv_pct"),
-                "regularidade"    : cache.get("regularidade", "0/0"),
-                "aparicoes"       : 0,
-                "active"          : False,
-                "system_excluded" : True,
-                "motivo_exclusao" : meta["motivo"],
-                "faixa_mensal"    : {"min": 0.0, "max": 0.0},
-            })
-
-    return fontes_ativas + fontes_inativas + fontes_excluidas_sistema
 
 def _session_view(sessao: Dict, lancamentos_grupo: Optional[Dict] = None) -> Dict:
     """
@@ -857,65 +719,18 @@ def _apply_toggle_grupo(sessao: Dict, mutation: Dict) -> Dict:
 
     grupo_id      = (params.get("grupo_id") or "").strip()
     active        = bool(params.get("active", True))
-    display_cache = params.get("display_cache")  # valores estéticos opcionais
 
     if not grupo_id:
         return sessao
 
-    # Quando o usuário ativa um grupo excluído pelo sistema (auto_transferencia, circular etc.),
-    # adiciona grupos_override='estavel' para que apurar() force a inclusão.
-    # Quando desativa, remove o override (adiciona 'ignorar' ao log) se existia.
-    grupos_excluidos_sistema = sessao.get("config", {}).get("grupos_excluidos_sistema", [])
-    if grupo_id in grupos_excluidos_sistema:
-        log = sessao.setdefault("config", {}).setdefault("grupos_override_log", [])
-        log.append({
-            "v"        : len(log) + 1,
-            "grupo_id" : grupo_id,
-            "flag"     : "estavel" if active else "ignorar",
-            "timestamp": timestamp,
-            "source"   : source,
-        })
-
-    # Quando desativa, persiste o cache de exibição (renda_base, cv_pct, regularidade)
-    # para que o card continue mostrando os valores da última vez que estava ativo.
-    # Puramente estético — não interfere no cálculo.
-    if not active and display_cache:
-        cache_map = sessao.setdefault("config", {}).setdefault("grupos_display_cache", {})
-        cache_map[grupo_id] = {
-            "renda_base"  : display_cache.get("renda_base"),
-            "cv_pct"      : display_cache.get("cv_pct"),
-            "regularidade": display_cache.get("regularidade"),
-        }
-
-    for mes_lancs in sessao.get("meses", {}).values():
-        for lanc_id, lanc in mes_lancs.items():
-            versions = lanc.get("versions", [])
-            if not versions:
-                continue
-
-            last_state = versions[-1]["state"]
-
-            # Ignora saídas
-            val = last_state.get("valor", 0) or 0
-            if val < 0:
-                continue
-
-            # Matching por similaridade Levenshtein — idêntico ao agrupar_por_pagador
-            desc_norm  = normalizar(last_state.get("descricao") or "")
-            similarity = _rfuzz.ratio(desc_norm, grupo_id) / 100.0
-            if similarity < LEVENSHTEIN_THRESHOLD:
-                continue
-
-            new_state = dict(last_state)
-            new_state["active"] = active
-            new_version = {
-                "v"        : len(versions) + 1,
-                "op"       : "toggle_grupo",
-                "source"   : source,
-                "timestamp": timestamp,
-                "state"    : new_state,
-            }
-            lanc["versions"].append(new_version)
+    log = sessao.setdefault("config", {}).setdefault("grupos_override_log", [])
+    log.append({
+        "v"        : len(log) + 1,
+        "grupo_id" : grupo_id,
+        "flag"     : "estavel" if active else "ignorar",
+        "timestamp": timestamp,
+        "source"   : source,
+    })
 
     return sessao
 
