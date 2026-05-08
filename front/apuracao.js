@@ -145,6 +145,7 @@ async function selectSession(id) {
     currentLaudo    = estado.laudo;
     activeMonth      = null;
     activeSource     = null;
+    activeTypeFilter = null;
     gruposActiveTab  = 'composicao';
     knownFontes      = [];
     sourcesExpanded  = false;
@@ -342,8 +343,29 @@ function _sourceMatches(s, pagador) {
   return desc.includes(pag);
 }
 
-// Estado de expansão dos cards de tipo de exclusão (persiste entre renders)
-const _exclExpanded = {};
+// ── Mapa de normalização: motivo → tipo canônico ─────────────────────────────
+const _MOTIVO_TO_TIPO = {
+  circular                    : 'circular',
+  circular_longitudinal       : 'circular',
+  circular_longitudinal_manual: 'circular',
+  variancia                   : 'variancia',
+  ruido                       : 'variancia',
+  sem_historico               : 'sem_historico',
+  auto_transferencia          : 'auto_transferencia',
+  auto_investimento           : 'auto_transferencia',
+  flag_usuario                : 'flag_usuario',
+  duplicado_manual            : 'duplicado_manual',
+};
+
+// ── Labels de exibição por tipo canônico ──────────────────────────────────────
+const TIPO_LABEL = {
+  circular          : 'Circular',
+  variancia         : 'Variação alta',
+  sem_historico     : 'Sem histórico',
+  auto_transferencia: 'Auto-transferência',
+  flag_usuario      : 'Ignorados',
+  duplicado_manual  : 'Duplicados',
+};
 
 function renderSourceCards() {
   const wrap = document.getElementById('source-cards');
@@ -352,34 +374,11 @@ function renderSourceCards() {
   _mergeFontes(currentLaudo?.fontes || []);
   if (knownFontes.length === 0) { wrap.innerHTML = ''; return; }
 
-  const MOTIVO_LABEL = {
-    auto_transferencia          : 'Auto transferência',
-    auto_investimento           : 'Auto transferência',
-    circular                    : 'Circular',
-    circular_longitudinal       : 'Circular',
-    circular_longitudinal_manual: 'Circular',
-    variancia                   : 'Variação alta',
-    ruido                       : 'Variação alta',
-    sem_historico               : 'Sem histórico',
-    flag_usuario                : 'Marcado manualmente',
-    duplicado_manual            : 'Duplicado',
-  };
-
   // ── Separar fontes ativas dos excluídos pelo sistema ──────────────────────
-  // Fontes ativas: identidade = pagador → card individual
-  // Excluídos: identidade = tipo de motivo → card de tipo (expansível)
   const fontesAtivas = knownFontes.filter(f => !f.system_excluded);
   const sysExcluidos = knownFontes.filter(f => !!f.system_excluded);
 
-  // Agrupar excluídos por tipo de motivo
-  const porTipo = {};
-  for (const f of sysExcluidos) {
-    const tipo = MOTIVO_LABEL[f.motivo_exclusao] || f.motivo_exclusao || 'Outro';
-    if (!porTipo[tipo]) porTipo[tipo] = [];
-    porTipo[tipo].push(f);
-  }
-
-  // ── Render: fontes ativas (comportamento original) ─────────────────────────
+  // ── Render: fontes ativas (card individual por grupo) ─────────────────────
   const htmlAtivas = fontesAtivas.map((f) => {
     const isSelected  = activeSource === f.pagador;
     const grupoAtivo  = _grupoIsActive(f.pagador);
@@ -396,9 +395,8 @@ function renderSourceCards() {
             data-action="toggle-grupo"
             data-grupo-id="${esc(f.grupo_id || '')}"
             data-pagador="${esc(f.pagador || '')}"
-            data-system-excluded="0"
             data-active="${grupoAtivo ? '0' : '1'}"
-            title="${grupoAtivo ? 'Desativar todos os lançamentos deste grupo' : 'Ativar todos os lançamentos deste grupo'}"
+            title="${grupoAtivo ? 'Desativar grupo' : 'Ativar grupo'}"
           >${toggleLabel}</button>
         </div>
         <span class="source-card-val">${fmtBRL(f.renda_base)}</span>
@@ -412,34 +410,41 @@ function renderSourceCards() {
       </div>`;
   }).join('');
 
-  // ── Render: cards de tipo de exclusão ─────────────────────────────────────
-  const htmlExcl = Object.entries(porTipo).map(([tipo, grupos]) => {
-    const expanded = !!_exclExpanded[tipo];
-    const lista = expanded
-      ? grupos.map(f => `
-        <div class="excl-type-item">
-          <span class="excl-type-item-name" title="${esc(f.pagador)}">${esc(f.pagador)}</span>
-          <button class="excl-type-item-btn"
-            data-action="toggle-grupo"
-            data-grupo-id="${esc(f.grupo_id || '')}"
-            data-pagador="${esc(f.pagador || '')}"
-            data-system-excluded="1"
-            data-active="1"
-            title="Forçar inclusão deste grupo">Ativar</button>
-        </div>`).join('')
-      : '';
-    return `
-      <div class="excl-type-card" data-excl-tipo="${esc(tipo)}">
-        <div class="excl-type-header">
-          <span class="excl-type-name">${esc(tipo)}</span>
-          <span class="excl-type-count">${grupos.length} grupo${grupos.length !== 1 ? 's' : ''}</span>
-        </div>
-        ${expanded ? `<div class="excl-type-list">${lista}</div>` : ''}
-        <button class="excl-type-expand" data-excl-tipo="${esc(tipo)}">${expanded ? 'fechar ▴' : 'ver grupos ▾'}</button>
-      </div>`;
-  }).join('');
+  // ── Render: cards de tipo de exclusão (um por tipo, somente filtro) ───────
+  // Total por tipo: soma de currentApuracao.excluidos agrupados pelo tipo canônico
+  const totalPorTipo = {};
+  const countPorTipo = {};
+  (currentApuracao?.excluidos || []).forEach(e => {
+    const tipo = _MOTIVO_TO_TIPO[e.motivo] || e.motivo || 'outro';
+    totalPorTipo[tipo] = (totalPorTipo[tipo] || 0) + Math.abs(e.valor || 0);
+  });
+  for (const f of sysExcluidos) {
+    const tipo = _MOTIVO_TO_TIPO[f.motivo_exclusao] || f.motivo_exclusao || 'outro';
+    countPorTipo[tipo] = (countPorTipo[tipo] || 0) + 1;
+  }
+  // Tipos presentes (preserva ordem de definição do TIPO_LABEL)
+  const tiposOrdem = ['circular','variancia','sem_historico','auto_transferencia','flag_usuario','duplicado_manual'];
+  const tiposPresentes = tiposOrdem.filter(t => totalPorTipo[t] || countPorTipo[t]);
+  // Tipos extras não mapeados
+  const tiposExtras = [...new Set([...Object.keys(totalPorTipo), ...Object.keys(countPorTipo)])].filter(t => !tiposOrdem.includes(t));
 
-  // Separador visual entre fontes e excluídos
+  const renderTipoCard = (tipo) => {
+    const isSelected = activeTypeFilter === tipo;
+    const label      = TIPO_LABEL[tipo] || tipo;
+    const total      = totalPorTipo[tipo] || 0;
+    const count      = countPorTipo[tipo] || 0;
+    return `
+      <div class="source-card source-card-excl${isSelected ? ' active' : ''}" data-tipo="${esc(tipo)}" data-action="select-tipo">
+        <div class="source-card-header">
+          <span class="source-card-name">${esc(label)}</span>
+          <span class="excl-count-badge">${count} grupo${count !== 1 ? 's' : ''}</span>
+        </div>
+        <span class="source-card-val">${fmtBRL(total)}</span>
+      </div>`;
+  };
+
+  const htmlExcl = [...tiposPresentes, ...tiposExtras].map(renderTipoCard).join('');
+
   const separador = sysExcluidos.length > 0
     ? `<div class="excl-section-label">Excluídos pelo sistema</div>${htmlExcl}`
     : '';
@@ -447,38 +452,40 @@ function renderSourceCards() {
   wrap.innerHTML = htmlAtivas + separador;
 
   // ── Eventos: clique nas fontes ativas ─────────────────────────────────────
-  wrap.querySelectorAll('.source-card').forEach(card => {
+  wrap.querySelectorAll('.source-card:not([data-action="select-tipo"])').forEach(card => {
     card.addEventListener('click', e => {
       if (e.target.closest('[data-action="toggle-grupo"]')) return;
       const src = card.dataset.source;
-      activeSource = (activeSource === src) ? null : src;
+      if (!src) return;
+      activeSource     = (activeSource === src) ? null : src;
+      activeTypeFilter = null;
       renderSourceCards();
       renderFilterBar();
       renderTransactions();
     });
   });
 
-  // ── Eventos: expand dos cards de tipo de exclusão ─────────────────────────
-  wrap.querySelectorAll('.excl-type-expand').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const tipo = btn.dataset.exclTipo;
-      _exclExpanded[tipo] = !_exclExpanded[tipo];
+  // ── Eventos: clique nos cards de tipo ─────────────────────────────────────
+  wrap.querySelectorAll('[data-action="select-tipo"]').forEach(card => {
+    card.addEventListener('click', () => {
+      const tipo       = card.dataset.tipo;
+      activeTypeFilter = (activeTypeFilter === tipo) ? null : tipo;
+      activeSource     = null;
       renderSourceCards();
+      renderFilterBar();
+      renderTransactions();
     });
   });
 
-  // ── Eventos: toggle-grupo (fontes ativas + itens individuais nos tipos) ────
+  // ── Eventos: toggle-grupo (fontes ativas) ─────────────────────────────────
   wrap.querySelectorAll('[data-action="toggle-grupo"]').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const grupo_id = btn.dataset.grupoId;
       const pagador  = btn.dataset.pagador;
       const active   = btn.dataset.active === '1';
-      const isSys    = btn.dataset.systemExcluded === '1';
 
-      // Optimistic update apenas para fontes ativas (não para sys-excl)
-      if (!isSys && currentSession?.meses) {
+      if (currentSession?.meses) {
         for (const lancs of Object.values(currentSession.meses)) {
           for (const lanc of Object.values(lancs)) {
             const s = lanc.state;
@@ -503,7 +510,7 @@ function renderSourceCards() {
   // ── Ver mais / ver menos (somente para fontes ativas) ─────────────────────
   wrap.parentNode.querySelector('.source-ver-mais-btn')?.remove();
   requestAnimationFrame(() => {
-    const activeCards = [...wrap.querySelectorAll('.source-card')];
+    const activeCards = [...wrap.querySelectorAll('.source-card:not([data-action="select-tipo"])')];
     if (activeCards.length === 0) return;
     wrap.parentNode.querySelector('.source-ver-mais-btn')?.remove();
 
@@ -545,6 +552,7 @@ function renderFilterBar() {
 
   const hasMonth  = !!activeMonth;
   const hasSource = !!activeSource;
+  const hasTipo   = !!activeTypeFilter;
 
   if (hasMonth) {
     document.getElementById('edit-pdf-month-label').textContent = fmtMonthLabel(activeMonth);
@@ -554,7 +562,7 @@ function renderFilterBar() {
     btnEdit.setAttribute('hidden', '');
   }
 
-  if (!hasMonth && !hasSource) {
+  if (!hasMonth && !hasSource && !hasTipo) {
     bar.setAttribute('hidden', '');
     return;
   }
@@ -575,12 +583,20 @@ function renderFilterBar() {
       <button class="filter-crumb-x" data-clear="source" title="Remover filtro">×</button>
     </span>`;
   }
+  if (hasTipo) {
+    const tipoLabel = TIPO_LABEL[activeTypeFilter] || activeTypeFilter;
+    html += `<span class="filter-crumb filter-crumb-excl" title="${esc(tipoLabel)}">
+      <span class="filter-crumb-text">${esc(tipoLabel)}</span>
+      <button class="filter-crumb-x" data-clear="tipo" title="Remover filtro">×</button>
+    </span>`;
+  }
   crumbs.innerHTML = html;
 
   crumbs.querySelectorAll('.filter-crumb-x').forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.dataset.clear === 'month')  { activeMonth  = null; renderMonthChips(); }
       if (btn.dataset.clear === 'source') { activeSource = null; renderSourceCards(); }
+      if (btn.dataset.clear === 'tipo')   { activeTypeFilter = null; renderSourceCards(); }
       renderFilterBar();
       renderTransactions();
     });
@@ -694,10 +710,11 @@ async function handleSessionMenuAction(action) {
         currentSession  = null;
         currentApuracao = null;
         currentLaudo    = null;
-        activeMonth     = null;
-        activeSource    = null;
-        knownFontes     = [];
-        sourcesExpanded = false;
+        activeMonth      = null;
+        activeSource     = null;
+        activeTypeFilter = null;
+        knownFontes      = [];
+        sourcesExpanded  = false;
         sessionEditorOpened.clear();
         showFormView();
       }

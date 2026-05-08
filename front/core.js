@@ -27,6 +27,7 @@ let currentApuracao  = null;  // resultado de /sessao/{id}/apuracao
 let currentLaudo     = null;  // resultado de /sessao/{id}/laudo
 let activeMonth      = null;  // 'YYYY-MM' do mês selecionado
 let activeSource     = null;  // pagador (string) do card de fonte selecionado
+let activeTypeFilter = null;  // tipo de exclusão selecionado ('circular', 'variancia', etc.)
 let gruposActiveTab  = null;  // aba ativa na seção de grupos ('composicao', etc.)
 let sessionEditorOpened = new Set(); // meses cujo editor já foi aberto
 let mutationPending  = false; // bloqueia mutações simultâneas

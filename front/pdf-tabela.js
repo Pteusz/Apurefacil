@@ -127,6 +127,21 @@ function renderTransactions() {
     lancs = lancs.filter(l => _sourceMatches(l.state, activeSource));
   }
 
+  // ── Filtro por tipo de exclusão ───────────────────────────────────────────
+  if (activeTypeFilter) {
+    const fontesDoTipo = knownFontes.filter(f =>
+      f.system_excluded &&
+      ((_MOTIVO_TO_TIPO[f.motivo_exclusao] || f.motivo_exclusao) === activeTypeFilter)
+    );
+    if (fontesDoTipo.length > 0) {
+      lancs = lancs.filter(l =>
+        fontesDoTipo.some(f => _sourceMatches(l.state, f.pagador))
+      );
+    } else {
+      lancs = [];
+    }
+  }
+
   if (lancs.length === 0) {
     tbody.innerHTML = `<tr><td colspan="${4 + numDescCols}"><div class="empty-state">Nenhum lançamento encontrado</div></td></tr>`;
     return;
