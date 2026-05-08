@@ -546,6 +546,12 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
     """
     Aplica as 6 fases de apuração sobre os lançamentos.
 
+    v4.0 — Modelo conta armada fechada:
+      Todo lançamento pertence a um grupo. O agrupamento ocorre antes de qualquer
+      classificação. Auto-transferência, ruído, circular e sem-histórico são tipos
+      de grupo — não filtros que eliminam lançamentos antes de existirem grupos.
+      A lista de excluídos emite UMA entrada por grupo (não por lançamento).
+
     Modos disponíveis via config.modo — diferença APENAS na Fase 6 (renda_base)
     e no FREQ_MIN da Fase 4:
 
@@ -554,13 +560,10 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
       'moderado'    → FREQ_MIN=3, renda_base = média condicional (meses com valor > 0)
       'liberal'     → FREQ_MIN=3, renda_base = percentil 90      (dez)
     """
-    # Frequência mínima: só conservador eleva o piso
     freq_min = FREQ_MIN_CONSERVADOR if config.modo == 'conservador' else FREQ_MIN_MESES
 
-    # Overrides de grupo definidos pelo contador (grupo_id → FlagGrupo)
     grupos_override: Dict[str, str] = config.grupos_override or {}
-
-    filtros_norm     = [f for f in config.contas_proprias if f.strip()]
+    filtros_norm    = [f for f in config.contas_proprias if f.strip()]
 
     numeros_dinamicos = extrair_numeros_conta_titular(lancamentos_raw, filtros_norm)
     numeros_proprios  = list(set(
@@ -568,14 +571,14 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
         + numeros_dinamicos
     ))
 
-    lancamentos_ignorados:   List[Dict] = []
+    # ── Pré-processamento: ignorados e forçados ───────────────────────────────
+    lancamentos_ignorados:    List[Dict] = []
     lancamentos_processaveis: List[Dict] = []
     forcados_estaveis: set = set()
 
     for lanc in lancamentos_raw:
         incluido = lanc.get('incluido', True)
         grupo    = (lanc.get('grupo') or lanc.get('flag') or '').strip().lower()
-
         if not incluido or grupo == GRUPO_IGNORAR:
             lancamentos_ignorados.append(lanc)
         else:
@@ -591,7 +594,6 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
             'grupo_id': normalizar(origem),
             'pagador' : origem,
             'valor'   : lanc.get('entrada', 0) or lanc.get('saida', 0),
-            'data'    : lanc.get('date'),
             'motivo'  : 'flag_usuario',
             'flag'    : 'ignorar',
         })
@@ -611,132 +613,144 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
     })
     meses_analisados = len(todos_meses)
 
-    # FASE 1 — Filtro de contas próprias
-    entradas_validas: List[Dict] = []
-    for lanc in entradas_raw:
-        origem      = lanc.get('origem_destino') or lanc.get('tipo_transacao') or 'Desconhecido'
-        norm_origem = normalizar(origem)
+    # ── Helpers locais ────────────────────────────────────────────────────────
 
-        # Contador pode promover grupo auto_transferencia → estavel
-        if grupos_override.get(norm_origem) == 'estavel':
-            entradas_validas.append(lanc)
-            continue
-
-        proprio, motivo = is_conta_propria(origem, numeros_proprios, filtros_norm)
-        if proprio:
-            excluidos.append({
-                'grupo_id': norm_origem,
-                'pagador' : origem,
-                'valor'   : lanc.get('entrada', 0),
-                'data'    : lanc.get('date'),
-                'motivo'  : motivo,
-                'flag'    : 'auto_transferencia',
-            })
-        else:
-            entradas_validas.append(lanc)
-
-    # FASE 2 — Agrupamento
-    grupos = agrupar_por_pagador(entradas_validas, config.threshold_levenshtein)
-
-    forcados_por_chave: set = set()
-    for chave, lancs in grupos.items():
-        for lanc in lancs:
-            lanc_key = lanc.get('id') or id(lanc)
-            if lanc_key in forcados_estaveis or any(
-                (orig.get('id') or id(orig)) in forcados_estaveis
-                for orig in lancamentos_raw
-                if orig.get('origem_destino') == lanc.get('origem_destino')
-                   and orig.get('date') == lanc.get('date')
-                   and orig.get('entrada') == lanc.get('entrada')
-            ):
-                forcados_por_chave.add(chave)
-
-    # FASE 3 — Granularização mensal
-    historico:       Dict[str, Dict[str, float]] = {}
-    label_por_grupo: Dict[str, str]              = {}
-    for chave, lancs in grupos.items():
-        soma_por_mes: Dict[str, float] = defaultdict(float)
+    def _historico_grupo(lancs: List[Dict]) -> Dict[str, float]:
+        """Soma entradas por mês para uma lista de lançamentos."""
+        soma: Dict[str, float] = defaultdict(float)
         for l in lancs:
             mes = parse_date(l.get('date'))
-            if mes: soma_por_mes[mes] += l.get('entrada', 0.0)
-        historico[chave] = {mes: soma_por_mes.get(mes, 0.0) for mes in todos_meses}
+            if mes:
+                soma[mes] += l.get('entrada', 0.0)
+        return {mes: soma.get(mes, 0.0) for mes in todos_meses}
+
+    def _excluir_grupo(
+        chave : str,
+        lancs : List[Dict],
+        motivo: str,
+        flag  : str,
+        info  : Optional[Dict] = None,
+    ) -> None:
+        """Emite UMA entrada de excluído por grupo (nunca por lançamento)."""
+        hist      = _historico_grupo(lancs)
+        aparicoes = sum(1 for v in hist.values() if v > 0)
+        entry: Dict = {
+            'grupo_id'       : chave,
+            'pagador'        : label_por_grupo.get(chave, chave),
+            'valor'          : round(sum(hist.values()), 2),
+            'motivo'         : motivo,
+            'flag'           : flag,
+            'aparicoes'      : aparicoes,
+            'valores_por_mes': dict(sorted(hist.items())),
+        }
+        if info and 'cv' in info:
+            entry['cv'] = info['cv']
+        excluidos.append(entry)
+
+    # FASE 1 — Agrupar TUDO (sem filtro prévio)
+    # Classificação de tipo ocorre após existirem grupos — nunca antes.
+    grupos = agrupar_por_pagador(entradas_raw, config.threshold_levenshtein)
+
+    label_por_grupo: Dict[str, str] = {}
+    for chave, lancs in grupos.items():
         origens = [l.get('origem_destino') or l.get('tipo_transacao') or chave for l in lancs]
         label_por_grupo[chave] = max(set(origens), key=origens.count)
 
-    # ── Overrides de grupo do contador (aplicado após agrupamento + labels) ──────
-    # grupos_forcar_excluir: grupos a excluir mesmo que o algoritmo os estabilize
+    # FASE 2 — Classificar auto_transferencia ao nível do grupo
+    # Um grupo é auto_transferencia se o seu label (identidade de grupo) corresponde
+    # ao titular. Fallback: lançamento mais representativo (maior valor) quando o
+    # label normalizado é genérico demais para revelar a natureza.
+    def _grupo_e_proprio(chave: str, lancs: List[Dict]) -> Tuple[bool, str]:
+        label    = label_por_grupo[chave]
+        proprio, motivo = is_conta_propria(label, numeros_proprios, filtros_norm)
+        if proprio:
+            return True, motivo
+        lanc_ref   = max(lancs, key=lambda l: l.get('entrada', 0.0))
+        origem_ref = lanc_ref.get('origem_destino') or lanc_ref.get('tipo_transacao') or ''
+        if origem_ref and origem_ref != label:
+            proprio2, motivo2 = is_conta_propria(origem_ref, numeros_proprios, filtros_norm)
+            if proprio2:
+                return True, motivo2
+        return False, ''
+
+    grupos_auto: set = set()
+    for chave, lancs in grupos.items():
+        if grupos_override.get(chave) == 'estavel':
+            continue
+        proprio, _ = _grupo_e_proprio(chave, lancs)
+        if proprio:
+            grupos_auto.add(chave)
+
+    for chave in grupos_auto:
+        _excluir_grupo(chave, grupos[chave], 'auto_transferencia', 'auto_transferencia')
+
+    grupos_validos: Dict[str, List[Dict]] = {
+        k: v for k, v in grupos.items() if k not in grupos_auto
+    }
+
+    # FASE 3 — Granularização mensal
+    historico: Dict[str, Dict[str, float]] = {
+        chave: _historico_grupo(lancs)
+        for chave, lancs in grupos_validos.items()
+    }
+
+    # Forced estáveis por lançamento
+    forcados_por_chave: set = set()
+    for chave, lancs in grupos_validos.items():
+        for lanc in lancs:
+            if (lanc.get('id') or id(lanc)) in forcados_estaveis:
+                forcados_por_chave.add(chave)
+
+    # ── Overrides do contador ─────────────────────────────────────────────────
     grupos_forcar_excluir: Dict[str, str] = {}
 
     for chave, flag_ov in list(grupos_override.items()):
         if chave not in historico:
             continue
         if flag_ov == 'ignorar':
-            # Remove do pipeline; adiciona a excluidos imediatamente
-            for lanc in grupos.pop(chave, []):
-                excluidos.append({
-                    'grupo_id': chave,
-                    'pagador' : label_por_grupo.get(chave, chave),
-                    'valor'   : lanc.get('entrada', 0),
-                    'data'    : lanc.get('date'),
-                    'motivo'  : 'flag_usuario',
-                    'flag'    : 'ignorar',
-                })
-            del historico[chave]
+            _excluir_grupo(chave, grupos_validos.get(chave, []), 'flag_usuario', 'ignorar')
+            grupos_validos.pop(chave, None)
+            historico.pop(chave, None)
             label_por_grupo.pop(chave, None)
         elif flag_ov == 'estavel':
-            # Força estável na Fase 4
             forcados_por_chave.add(chave)
         elif flag_ov in _OV_FLAG_TO_MOTIVO:
-            # Remove eventual forçado anterior; guardamos para forçar exclusão pós-Fase 4
             forcados_por_chave.discard(chave)
             grupos_forcar_excluir[chave] = flag_ov
 
-    # FASE 4 — Variância (freq_min varia conforme modo)
+    # FASE 4 — Variância
     historico_normal   = {k: v for k, v in historico.items() if k not in forcados_por_chave}
     historico_forcados = {k: v for k, v in historico.items() if k in forcados_por_chave}
 
     classificados = classificar_por_variancia(historico_normal, todos_meses, freq_min=freq_min)
 
     for chave, vals in historico_forcados.items():
-        valores           = [vals.get(m, 0.0) for m in todos_meses]
-        valores_ordenados = sorted(valores)
-        seis              = statistics.median(valores) if valores else 0.0
-        n                 = len(valores_ordenados)
-        idx               = (PERCENTIL_PICO / 100) * (n - 1)
-        idx_b             = int(idx)
-        idx_a             = min(idx_b + 1, n - 1)
-        fracao            = idx - idx_b
-        dez               = (
-            valores_ordenados[idx_b] * (1 - fracao) + valores_ordenados[idx_a] * fracao
+        valores      = [vals.get(m, 0.0) for m in todos_meses]
+        valores_ord  = sorted(valores)
+        seis         = statistics.median(valores) if valores else 0.0
+        n            = len(valores_ord)
+        idx          = (PERCENTIL_PICO / 100) * (n - 1)
+        idx_b        = int(idx)
+        idx_a        = min(idx_b + 1, n - 1)
+        dez          = (
+            valores_ord[idx_b] * (1 - (idx - idx_b)) + valores_ord[idx_a] * (idx - idx_b)
             if n > 0 else 0.0
         )
-        cv = coeficiente_variacao(valores)
-        aparicoes = sum(1 for m in todos_meses if vals.get(m, 0.0) > 0)
         classificados[chave] = {
             'classificacao'  : 'forcado',
-            'cv'             : round(cv, 4),
+            'cv'             : round(coeficiente_variacao(valores), 4),
             'threshold_cv'   : None,
             'valores_por_mes': dict(sorted(vals.items())),
             'seis'           : round(seis, 2),
             'dez'            : round(dez, 2),
-            'aparicoes'      : aparicoes,
+            'aparicoes'      : sum(1 for m in todos_meses if vals.get(m, 0.0) > 0),
         }
 
-    estaveis = {
-        k: v for k, v in classificados.items()
-        if v['classificacao'] in ('estavel', 'forcado')
-    }
-    ruidosos = {
-        k: v for k, v in classificados.items()
-        if v['classificacao'] == 'ruido'
-    }
-    sem_historico = {
-        k: v for k, v in classificados.items()
-        if v['classificacao'] == 'sem_historico'
-    }
+    estaveis      = {k: v for k, v in classificados.items() if v['classificacao'] in ('estavel', 'forcado')}
+    ruidosos      = {k: v for k, v in classificados.items() if v['classificacao'] == 'ruido'}
+    sem_historico = {k: v for k, v in classificados.items() if v['classificacao'] == 'sem_historico'}
 
-    # Aplica forced-exclusions do contador: remove dos dicts de classificação
-    # e adiciona a excluidos com o motivo correspondente ao flag escolhido.
+    # Forçar exclusões do contador
     for chave in list(grupos_forcar_excluir):
         estaveis.pop(chave, None)
         ruidosos.pop(chave, None)
@@ -744,48 +758,17 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
 
     for chave, flag_ov in grupos_forcar_excluir.items():
         motivo = _OV_FLAG_TO_MOTIVO[flag_ov]
-        info   = classificados.get(chave, {})
-        for lanc in grupos.get(chave, []):
-            entry: Dict = {
-                'grupo_id' : chave,
-                'pagador'  : label_por_grupo.get(chave, chave),
-                'valor'    : lanc.get('entrada', 0),
-                'data'     : lanc.get('date'),
-                'motivo'   : motivo,
-                'flag'     : flag_ov,
-                'aparicoes': info.get('aparicoes', 0),
-            }
-            if flag_ov == 'ruido':
-                entry['cv'] = info.get('cv')
-            excluidos.append(entry)
+        _excluir_grupo(chave, grupos_validos.get(chave, []), motivo, flag_ov, classificados.get(chave))
 
+    # Ruído e sem-histórico — UM excluído por grupo
     for chave, info in ruidosos.items():
-        for lanc in grupos.get(chave, []):
-            excluidos.append({
-                'grupo_id': chave,
-                'pagador' : label_por_grupo.get(chave, chave),
-                'valor'   : lanc.get('entrada', 0),
-                'data'    : lanc.get('date'),
-                'motivo'  : 'variancia',
-                'cv'      : info['cv'],
-                'aparicoes': info.get('aparicoes', 0),
-                'flag'    : 'ruido',
-            })
+        _excluir_grupo(chave, grupos_validos.get(chave, []), 'variancia', 'ruido', info)
 
     for chave, info in sem_historico.items():
-        for lanc in grupos.get(chave, []):
-            excluidos.append({
-                'grupo_id' : chave,
-                'pagador'  : label_por_grupo.get(chave, chave),
-                'valor'    : lanc.get('entrada', 0),
-                'data'     : lanc.get('date'),
-                'motivo'   : 'sem_historico',
-                'aparicoes': info['aparicoes'],
-                'flag'     : 'sem_historico',
-            })
+        _excluir_grupo(chave, grupos_validos.get(chave, []), 'sem_historico', 'sem_historico', info)
 
-    # FASE 5 — Circular
-    entradas_estaveis  = [l for chave in estaveis for l in grupos.get(chave, [])]
+    # FASE 5 — Circular pontual (janela de horas)
+    entradas_estaveis  = [l for chave in estaveis for l in grupos_validos.get(chave, [])]
     idx_circulares_rel = detectar_circulares(
         entradas_estaveis, saidas_raw, numeros_proprios, filtros_norm,
         config.janela_circular_horas,
@@ -794,22 +777,20 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
     circulares_por_chave: Dict[str, set] = {}
     cursor = 0
     for chave in estaveis:
-        lancs_grupo = grupos.get(chave, [])
-        for j, lanc in enumerate(lancs_grupo):
+        lancs_grupo = grupos_validos.get(chave, [])
+        for j in range(len(lancs_grupo)):
             if cursor + j in idx_circulares_rel:
                 circulares_por_chave.setdefault(chave, set()).add(j)
-                excluidos.append({
-                    'grupo_id': chave,
-                    'pagador' : label_por_grupo.get(chave, chave),
-                    'valor'   : lanc.get('entrada', 0),
-                    'data'    : lanc.get('date'),
-                    'motivo'  : 'circular',
-                    'flag'    : 'renda_circular',
-                })
         cursor += len(lancs_grupo)
 
-    # FASE 5b — Detecção circular bilateral longitudinal
-    # Agrupa saídas (excluindo contas próprias) por contraparte normalizada → meses
+    # Grupos inteiramente circulares → excluídos como grupo
+    chaves_circular_total: set = set()
+    for chave, idxs in circulares_por_chave.items():
+        if len(idxs) == len(grupos_validos.get(chave, [])):
+            chaves_circular_total.add(chave)
+            _excluir_grupo(chave, grupos_validos[chave], 'circular', 'renda_circular')
+
+    # FASE 5b — Circular longitudinal bilateral
     saidas_por_contraparte: Dict[str, set] = {}
     for s in saidas_raw:
         proprio, _ = is_conta_propria(
@@ -825,16 +806,13 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
             continue
         saidas_por_contraparte.setdefault(chave_s, set()).add(mes_s)
 
-    # Cruza com grupos de entrada estáveis: co-ocorrência mensal >= 30 % dos meses
-    # de aparição da entrada (denominador = meses_entrada, não n_meses total).
-    # Match entre chave_e e chave_s via fuzzy com o mesmo threshold do agrupamento.
-    chaves_saida = list(saidas_por_contraparte.keys())
-    cutoff_long  = config.threshold_levenshtein * 100
-
+    chaves_saida    = list(saidas_por_contraparte.keys())
+    cutoff_long     = config.threshold_levenshtein * 100
     circular_longitudinal: set = set()
+
     if todos_meses:
         for chave_e in list(estaveis.keys()):
-            if chave_e in circular_longitudinal:
+            if chave_e in circular_longitudinal or chave_e in chaves_circular_total:
                 continue
             meses_entrada = {
                 mes for mes in todos_meses
@@ -842,7 +820,6 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
             }
             if not meses_entrada:
                 continue
-            # Encontra todas as chaves de saída que fazem match fuzzy com chave_e
             matches_saida = _rprocess.extract(
                 chave_e, chaves_saida,
                 scorer=_rfuzz.ratio,
@@ -853,24 +830,18 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
                 co_ocorrencias = len(meses_entrada & meses_saida)
                 if co_ocorrencias / len(meses_entrada) >= CIRCULAR_LONGITUDINAL_FREQ:
                     circular_longitudinal.add(chave_e)
-                    for lanc in grupos.get(chave_e, []):
-                        excluidos.append({
-                            'grupo_id'         : chave_e,
-                            'pagador'          : label_por_grupo.get(chave_e, chave_e),
-                            'valor'            : lanc.get('entrada', 0),
-                            'data'             : lanc.get('date'),
-                            'motivo'           : 'circular_longitudinal',
-                            'contraparte_saida': match_chave_s,
-                            'flag'             : 'renda_circular',
-                        })
-                    break  # um match já basta para excluir o grupo
+                    _excluir_grupo(
+                        chave_e, grupos_validos.get(chave_e, []),
+                        'circular_longitudinal', 'renda_circular',
+                    )
+                    break
 
-    # Marcação manual pelo operador (casos sem saídas no extrato)
+    # Circular manual (sem saídas no extrato)
     manuais_norm = [normalizar(m) for m in config.circulares_longitudinais_manual if m.strip()]
     if manuais_norm:
         cutoff_manual = config.threshold_levenshtein * 100
         for chave_e in list(estaveis.keys()):
-            if chave_e in circular_longitudinal:
+            if chave_e in circular_longitudinal or chave_e in chaves_circular_total:
                 continue
             match = _rprocess.extractOne(
                 chave_e, manuais_norm,
@@ -879,25 +850,28 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
             )
             if match:
                 circular_longitudinal.add(chave_e)
-                for lanc in grupos.get(chave_e, []):
-                    excluidos.append({
-                        'grupo_id': chave_e,
-                        'pagador' : label_por_grupo.get(chave_e, chave_e),
-                        'valor'   : lanc.get('entrada', 0),
-                        'data'    : lanc.get('date'),
-                        'motivo'  : 'circular_longitudinal_manual',
-                        'flag'    : 'renda_circular',
-                    })
+                _excluir_grupo(
+                    chave_e, grupos_validos.get(chave_e, []),
+                    'circular_longitudinal_manual', 'renda_circular',
+                )
 
-    # Remove grupos longitudinalmente circulares antes da Fase 6
-    estaveis = {k: v for k, v in estaveis.items() if k not in circular_longitudinal}
+    # Remove circulares dos estáveis antes da Fase 6
+    estaveis = {
+        k: v for k, v in estaveis.items()
+        if k not in circular_longitudinal and k not in chaves_circular_total
+    }
 
     # FASE 6 — Composição
-    estaveis_finais = {}
+    composicao:    List[Dict] = []
+    inconclusivos: List[Dict] = []
+    renda_total:   float      = 0.0
+    totais_por_mes: Dict[str, float] = {mes: 0.0 for mes in todos_meses}
+
     for chave, info in estaveis.items():
         circ_idx    = circulares_por_chave.get(chave, set())
-        lancs_grupo = grupos.get(chave, [])
+        lancs_grupo = grupos_validos.get(chave, [])
 
+        # Recalcula histórico sem lançamentos circulares parciais
         soma_sem_circ: Dict[str, float] = defaultdict(float)
         for j, lanc in enumerate(lancs_grupo):
             if j not in circ_idx:
@@ -917,52 +891,31 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
         idx_a           = min(idx_b + 1, n - 1)
         dez             = valores_ord[idx_b] * (1 - (idx_p - idx_b)) + valores_ord[idx_a] * (idx_p - idx_b)
 
-        estaveis_finais[chave] = {
-            **info,
-            'cv'             : round(cv_novo, 4),
-            'valores_por_mes': dict(sorted(novo_historico.items())),
-            'seis'           : round(seis, 2),
-            'dez'            : round(dez, 2),
-        }
-
-    composicao:     List[Dict] = []
-    inconclusivos:  List[Dict] = []
-    renda_total:    float      = 0.0
-    totais_por_mes: Dict[str, float] = {mes: 0.0 for mes in todos_meses}
-
-    for chave, info in estaveis_finais.items():
-        # Fase 6 — medida de renda_base varia conforme modo
         if config.modo == 'moderado':
-            vals_pos   = [v for v in info['valores_por_mes'].values() if v > 0]
+            vals_pos   = [v for v in novo_historico.values() if v > 0]
             renda_base = round(statistics.mean(vals_pos), 2) if vals_pos else 0.0
         elif config.modo == 'liberal':
-            renda_base = info['dez']
-        else:  # padrao | conservador
-            renda_base = info['seis']
+            renda_base = round(dez, 2)
+        else:
+            renda_base = round(seis, 2)
 
-        flag_ef = 'estavel'  # composicao e inconclusivos sempre têm flag estavel
+        for mes, valor in novo_historico.items():
+            if mes in totais_por_mes:
+                totais_por_mes[mes] = round(totais_por_mes[mes] + valor, 2)
 
         entrada = {
             'grupo_id'       : chave,
             'pagador'        : label_por_grupo.get(chave, chave),
             'renda_base'     : renda_base,
-            'teto_organico'  : info['dez'],
-            'cv'             : info['cv'],
+            'teto_organico'  : round(dez, 2),
+            'cv'             : round(cv_novo, 4),
             'classificacao'  : info['classificacao'],
             'aparicoes'      : info.get('aparicoes', 0),
-            'valores_por_mes': info['valores_por_mes'],
-            'flag'           : flag_ef,
+            'valores_por_mes': dict(sorted(novo_historico.items())),
+            'flag'           : 'estavel',
         }
 
-        # totais_por_mes reflete o fluxo real de entradas estáveis no período,
-        # independente de renda_base — inclui composicao e inconclusivos.
-        for mes, valor in info['valores_por_mes'].items():
-            if mes in totais_por_mes:
-                totais_por_mes[mes] = round(totais_por_mes[mes] + valor, 2)
-
         if renda_base == 0.0:
-            # Grupo estável mas mediana zero (aparece em < 50 % dos meses):
-            # não contribui para a renda apurada, vai para seção inconclusiva.
             inconclusivos.append({**entrada, 'inconclusivo': True})
         else:
             renda_total += renda_base
