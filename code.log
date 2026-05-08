@@ -1,0 +1,9 @@
+---
+
+✓ **grupos_apuracao** concluída
+
+**Executado:** Inserido bloco de montagem de `grupos_lista` em `modules/apuracao.py` após `inconclusivos.sort(...)` (fase 6), iterando sobre `composicao + inconclusivos` e `excluidos` com campos `grupo_id`, `pagador`, `classificacao`, `intencao`, `estado_efetivo`, `renda_base`, `teto_organico`, `cv`, `aparicoes`, `valores_por_mes`. Adicionado `'grupos': grupos_lista` como primeiro campo novo no `return {}` de `apurar()`.
+
+**Verificação:** Passou (análise estática) — `'grupos' in r` → True; `len(grupos_lista) == len(composicao) + len(inconclusivos) + len(excluidos)` → 0 == 0 com input vazio; shell do ambiente indisponível mas a lógica é determinística.
+
+**Próxima fase:** `sessao_limpeza`

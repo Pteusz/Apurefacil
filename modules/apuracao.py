@@ -924,6 +924,47 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
     composicao.sort(key=lambda c: c['renda_base'], reverse=True)
     inconclusivos.sort(key=lambda c: c['aparicoes'], reverse=True)
 
+    # ── Montagem de grupos[] — conta armada ─────────────────────────────────────
+    # Union de todos os grupos com classificacao, intencao e estado_efetivo.
+    # Recortes (composicao, inconclusivos, excluidos) são views derivadas desta estrutura.
+    grupos_lista: List[Dict] = []
+
+    for g in composicao + inconclusivos:
+        intencao_g = grupos_override.get(g['grupo_id'])
+        classif_g  = g.get('classificacao', 'estavel')
+        if classif_g == 'forcado':
+            classif_g = 'estavel'  # forcado é estavel com intencao declarada
+        estado_ef  = intencao_g if intencao_g else classif_g
+        grupos_lista.append({
+            'grupo_id'       : g['grupo_id'],
+            'pagador'        : g.get('pagador', g['grupo_id']),
+            'classificacao'  : classif_g,
+            'intencao'       : intencao_g,
+            'estado_efetivo' : estado_ef,
+            'renda_base'     : g.get('renda_base', 0.0),
+            'teto_organico'  : g.get('teto_organico', 0.0),
+            'cv'             : g.get('cv'),
+            'aparicoes'      : g.get('aparicoes', 0),
+            'valores_por_mes': g.get('valores_por_mes', {}),
+        })
+
+    for ex in excluidos:
+        intencao_ex = grupos_override.get(ex['grupo_id'])
+        classif_ex  = ex.get('flag', 'ignorar')
+        estado_ef   = intencao_ex if intencao_ex else classif_ex
+        grupos_lista.append({
+            'grupo_id'       : ex['grupo_id'],
+            'pagador'        : ex.get('pagador', ex['grupo_id']),
+            'classificacao'  : classif_ex,
+            'intencao'       : intencao_ex,
+            'estado_efetivo' : estado_ef,
+            'renda_base'     : 0.0,
+            'teto_organico'  : 0.0,
+            'cv'             : ex.get('cv'),
+            'aparicoes'      : ex.get('aparicoes', 0),
+            'valores_por_mes': ex.get('valores_por_mes', {}),
+        })
+
     # ── Mapa reverso: lanc_id → {grupo_id, motivo} ───────────────────────────
     # Fonte de verdade do pertencimento de cada lançamento a um grupo.
     # O motivo é derivado do excluidos[] (já calculado) + composicao + inconclusivos.
@@ -955,6 +996,7 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
         'renda_apurada_mensal': round(renda_total, 2),
         'meses_analisados'    : meses_analisados,
         'baixa_confianca'     : meses_analisados < MESES_BAIXA_CONFIANCA,
+        'grupos'              : grupos_lista,
         'composicao'          : composicao,
         'inconclusivos'       : inconclusivos,
         'totais_por_mes'      : dict(sorted(totais_por_mes.items())),
