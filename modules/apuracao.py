@@ -924,6 +924,33 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
     composicao.sort(key=lambda c: c['renda_base'], reverse=True)
     inconclusivos.sort(key=lambda c: c['aparicoes'], reverse=True)
 
+    # ── Mapa reverso: lanc_id → {grupo_id, motivo} ───────────────────────────
+    # Fonte de verdade do pertencimento de cada lançamento a um grupo.
+    # O motivo é derivado do excluidos[] (já calculado) + composicao + inconclusivos.
+    # Saídas e lançamentos sem id são ignorados (não pertencem a grupo de entrada).
+    chave_to_motivo: Dict[str, str] = {ex['grupo_id']: ex['motivo'] for ex in excluidos}
+    for g in composicao:
+        chave_to_motivo[g['grupo_id']] = 'estavel'
+    for g in inconclusivos:
+        chave_to_motivo.setdefault(g['grupo_id'], 'sem_historico')
+
+    lancamentos_grupo: Dict[str, Dict] = {}
+
+    # Lançamentos que passaram por agrupar_por_pagador (entradas válidas + auto)
+    for chave, lancs in grupos.items():
+        motivo = chave_to_motivo.get(chave, 'estavel')
+        for lanc in lancs:
+            lid = lanc.get('id')
+            if lid:
+                lancamentos_grupo[lid] = {'grupo_id': chave, 'motivo': motivo}
+
+    # Lançamentos ignorados antes do agrupamento (flag_usuario / incluido=False)
+    for lanc in lancamentos_ignorados:
+        lid = lanc.get('id')
+        if lid:
+            norm = normalizar(lanc.get('origem_destino') or lanc.get('descricao') or '')
+            lancamentos_grupo[lid] = {'grupo_id': norm or lid, 'motivo': 'flag_usuario'}
+
     return {
         'renda_apurada_mensal': round(renda_total, 2),
         'meses_analisados'    : meses_analisados,
@@ -932,6 +959,7 @@ def apurar(lancamentos_raw: List[Dict], config: "ConfigApuracao") -> Dict:
         'inconclusivos'       : inconclusivos,
         'totais_por_mes'      : dict(sorted(totais_por_mes.items())),
         'excluidos'           : excluidos,
+        'lancamentos_grupo'   : lancamentos_grupo,
     }
 
 

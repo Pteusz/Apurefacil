@@ -124,22 +124,27 @@ function renderTransactions() {
   }
 
   if (activeSource) {
-    lancs = lancs.filter(l => _sourceMatches(l.state, activeSource));
+    // Usa grupo_id como fonte de verdade quando o back o forneceu
+    const fonteAtiva = knownFontes.find(f => f.pagador === activeSource);
+    if (fonteAtiva?.grupo_id) {
+      lancs = lancs.filter(l => l.state.grupo_id === fonteAtiva.grupo_id);
+    } else {
+      lancs = lancs.filter(l => _sourceMatches(l.state, activeSource));
+    }
   }
 
-  // ── Filtro por tipo de exclusão ───────────────────────────────────────────
+  // ── Filtro por tipo de exclusão — usa grupo_id do back como fonte de verdade
   if (activeTypeFilter) {
-    const fontesDoTipo = knownFontes.filter(f =>
-      f.system_excluded &&
-      ((_MOTIVO_TO_TIPO[f.motivo_exclusao] || f.motivo_exclusao) === activeTypeFilter)
+    const grupoIdsDoTipo = new Set(
+      knownFontes
+        .filter(f => f.system_excluded &&
+          (_MOTIVO_TO_TIPO[f.motivo_exclusao] || f.motivo_exclusao) === activeTypeFilter)
+        .map(f => f.grupo_id)
+        .filter(Boolean)
     );
-    if (fontesDoTipo.length > 0) {
-      lancs = lancs.filter(l =>
-        fontesDoTipo.some(f => _sourceMatches(l.state, f.pagador))
-      );
-    } else {
-      lancs = [];
-    }
+    lancs = grupoIdsDoTipo.size > 0
+      ? lancs.filter(l => grupoIdsDoTipo.has(l.state.grupo_id))
+      : [];
   }
 
   if (lancs.length === 0) {

@@ -313,12 +313,19 @@ function _mergeFontes(fontes) {
 
 function _grupoIsActive(pagador) {
   const meses = currentSession?.meses || {};
+  // Resolve grupo_id da fonte pelo pagador
+  const fonte   = knownFontes.find(f => f.pagador === pagador);
+  const grupoId = fonte?.grupo_id;
   let total = 0, ativos = 0;
   for (const lancs of Object.values(meses)) {
     for (const l of Object.values(lancs)) {
       const s = l.state;
       if ((s.valor ?? 0) < 0) continue;
-      if (!_sourceMatches(s, pagador)) continue;
+      // Usa grupo_id quando disponível; fallback para _sourceMatches
+      const pertence = grupoId
+        ? s.grupo_id === grupoId
+        : _sourceMatches(s, pagador);
+      if (!pertence) continue;
       total++;
       if (s.active) ativos++;
     }

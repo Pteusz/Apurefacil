@@ -389,7 +389,7 @@ async def mutate_session(user_id: str, session_id: str, mutation: Dict) -> Dict:
     )
 
     return {
-        "sessao"  : _session_view(sessao),
+        "sessao"  : _session_view(sessao, apuracao_result.get("lancamentos_grupo")),
         "apuracao": apuracao_result,
         "laudo"   : laudo_result,
     }
@@ -555,7 +555,7 @@ async def calcular_estado(user_id: str, session_id: str) -> Dict:
     )
 
     return {
-        "sessao"  : _session_view(sessao),
+        "sessao"  : _session_view(sessao, apuracao_result.get("lancamentos_grupo")),
         "apuracao": apuracao_result,
         "laudo"   : laudo_result,
     }
@@ -690,10 +690,14 @@ def _completar_fontes_com_inativos(
 
     return fontes_ativas + fontes_inativas + fontes_excluidas_sistema
 
-def _session_view(sessao: Dict) -> Dict:
+def _session_view(sessao: Dict, lancamentos_grupo: Optional[Dict] = None) -> Dict:
     """
     Projeta a sessão para a visão atual:
     cada lançamento mostra apenas versions[-1].state + metadata leve.
+
+    lancamentos_grupo: mapa {lanc_id → {grupo_id, motivo}} produzido por apurar().
+    Quando presente, injeta grupo_id e grupo_motivo no state de cada lançamento
+    sem mutar o dado persistido — são campos derivados da apuração corrente.
     """
     meses_view: Dict[str, List[Dict]] = {}
     for mes, lancs in sessao.get("meses", {}).items():
@@ -702,9 +706,14 @@ def _session_view(sessao: Dict) -> Dict:
             versions = lanc_data.get("versions", [])
             if not versions:
                 continue
+            state = versions[-1]["state"]
+            if lancamentos_grupo and lanc_id in lancamentos_grupo:
+                state = dict(state)  # cópia rasa — não mutar o dado persistido
+                state["grupo_id"]     = lancamentos_grupo[lanc_id]["grupo_id"]
+                state["grupo_motivo"] = lancamentos_grupo[lanc_id]["motivo"]
             lista.append({
                 "lanc_id"       : lanc_id,
-                "state"         : versions[-1]["state"],
+                "state"         : state,
                 "versions_count": len(versions),
             })
         # Ordena por data dentro do mês
