@@ -1,14 +1,13 @@
 ---
 
-✓ **sessao_limpeza** concluída
+✓ **front_unificacao** concluída
 
 **Executado:**
-1. Removida a função `_completar_fontes_com_inativos()` inteira (≈125 linhas)
-2. Removidas as 2 chamadas a ela em `mutate_session` e `calcular_estado`
-3. Em `_apply_toggle_grupo`: substituído o bloco condicional `grupos_excluidos_sistema` pelo append incondicional ao `grupos_override_log`
-4. Removido o bloco `display_cache` (comment + `if not active and display_cache`)
-5. Removido o loop `for mes_lancs in sessao.get("meses", {}).values()` inteiro
+- `front/core.js`: removida declaração `let knownFontes = []`
+- `front/apuracao.js`: removidas `_mergeFontes()`, `_grupoIsActive()`, `_sourceMatches()`; `renderSourceCards()` reescrita para ler `currentApuracao.grupos[]` diretamente; `renderFilterBar()` atualizada para buscar `pagador` por `grupo_id`; limpos todos os `knownFontes = []` (selectSession, handleSessionMenuAction)
+- `front/pdf-tabela.js`: filtros de `activeSource` e `activeTypeFilter` simplificados para usar `grupos[]`
+- `front/app.js`: removidos dois resíduos de `knownFontes = []` nos reset-blocks (não cobertos pela translation, mas necessários para a verificação passar)
 
-**Verificação:** os três greps (`_completar_fontes_com_inativos`, `grupos_excluidos_sistema`, `display_cache`) não retornaram nenhum resultado — passou.
+**Verificação:** passou — todos os três greps retornaram vazio
 
-**Próxima fase:** `front_unificacao`
+**Próxima fase:** `null` — sistema completo

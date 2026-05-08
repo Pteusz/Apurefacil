@@ -147,7 +147,6 @@ async function selectSession(id) {
     activeSource     = null;
     activeTypeFilter = null;
     gruposActiveTab  = 'composicao';
-    knownFontes      = [];
     sourcesExpanded  = false;
     sessionEditorOpened.clear();
     renderResultView();
@@ -296,59 +295,6 @@ function renderMonthChips() {
   });
 }
 
-function _mergeFontes(fontes) {
-  // Reconstrói sempre do zero — acumular entre renders cria duplicatas.
-  // Chave de identidade: grupo_id (estável, único por grupo).
-  const byId = {};
-  for (const f of knownFontes) {
-    const key = f.grupo_id || f.pagador;
-    byId[key] = f;
-  }
-  for (const f of fontes) {
-    const key = f.grupo_id || f.pagador;
-    byId[key] = { ...(byId[key] || {}), ...f };
-  }
-  knownFontes = Object.values(byId);
-}
-
-function _grupoIsActive(pagador) {
-  const meses = currentSession?.meses || {};
-  // Resolve grupo_id da fonte pelo pagador
-  const fonte   = knownFontes.find(f => f.pagador === pagador);
-  const grupoId = fonte?.grupo_id;
-  let total = 0, ativos = 0;
-  for (const lancs of Object.values(meses)) {
-    for (const l of Object.values(lancs)) {
-      const s = l.state;
-      if ((s.valor ?? 0) < 0) continue;
-      // Usa grupo_id quando disponível; fallback para _sourceMatches
-      const pertence = grupoId
-        ? s.grupo_id === grupoId
-        : _sourceMatches(s, pagador);
-      if (!pertence) continue;
-      total++;
-      if (s.active) ativos++;
-    }
-  }
-  return total > 0 && ativos === total;
-}
-
-function _sourceMatches(s, pagador) {
-  if (!pagador) return true;
-  const desc = (s.descricao || '').toLowerCase();
-  const pag  = pagador.toLowerCase();
-  const campos = s.campos;
-  if (campos) {
-    const keys = Object.keys(campos);
-    const lkeys = keys.map(k => k.toLowerCase());
-    const oIdx  = lkeys.findIndex(k => k.includes('origem') || k.includes('pagador') || k.includes('descri'));
-    const orVal = oIdx >= 0 ? (campos[keys[oIdx]] || '').toLowerCase() : '';
-    if (orVal && orVal.includes(pag)) return true;
-    if (orVal && pag.includes(orVal)) return true;
-  }
-  // pag.includes(desc) causava falso positivo quando desc é substring curta do pagador
-  return desc.includes(pag);
-}
 
 // ── Mapa de normalização: motivo → tipo canônico ─────────────────────────────
 const _MOTIVO_TO_TIPO = {
@@ -378,37 +324,37 @@ function renderSourceCards() {
   const wrap = document.getElementById('source-cards');
   if (!currentSession) { wrap.innerHTML = ''; return; }
 
-  _mergeFontes(currentLaudo?.fontes || []);
-  if (knownFontes.length === 0) { wrap.innerHTML = ''; return; }
+  const grupos = currentApuracao?.grupos || [];
+  if (grupos.length === 0) { wrap.innerHTML = ''; return; }
 
-  // ── Separar fontes ativas dos excluídos pelo sistema ──────────────────────
-  const fontesAtivas = knownFontes.filter(f => !f.system_excluded);
-  const sysExcluidos = knownFontes.filter(f => !!f.system_excluded);
+  const renda = currentApuracao?.renda_apurada_mensal || 0;
+  const meses = currentApuracao?.meses_analisados || 0;
 
-  // ── Render: fontes ativas (card individual por grupo) ─────────────────────
-  const htmlAtivas = fontesAtivas.map((f) => {
-    const isSelected  = activeSource === f.pagador;
-    const grupoAtivo  = _grupoIsActive(f.pagador);
-    const barW        = Math.min(Math.max(f.participacao_pct || 0, 0), 100).toFixed(1);
-    const toggleLabel = grupoAtivo ? 'Desativar' : 'Ativar';
-    const cv          = f.cv_pct != null ? Math.round(f.cv_pct) : null;
-    const cvClass     = cv === null ? 'cv-badge--unknown' : cv < 50 ? 'cv-badge--low' : cv <= 80 ? 'cv-badge--mid' : 'cv-badge--high';
-    const barClass    = cv === null ? '' : cv < 50 ? 'source-card-bar--low' : cv <= 80 ? 'source-card-bar--mid' : 'source-card-bar--high';
+  const fontesAtivas = grupos.filter(g => g.estado_efetivo === 'estavel');
+  const sysExcluidos = grupos.filter(g => g.estado_efetivo !== 'estavel');
+
+  const htmlAtivas = fontesAtivas.map((g) => {
+    const isSelected = activeSource === g.grupo_id;
+    const partPct    = renda > 0 ? (g.renda_base / renda * 100) : 0;
+    const barW       = Math.min(Math.max(partPct, 0), 100).toFixed(1);
+    const cv         = g.cv != null ? Math.round(g.cv * 100) : null;
+    const cvClass    = cv === null ? 'cv-badge--unknown' : cv < 50 ? 'cv-badge--low' : cv <= 80 ? 'cv-badge--mid' : 'cv-badge--high';
+    const barClass   = cv === null ? '' : cv < 50 ? 'source-card-bar--low' : cv <= 80 ? 'source-card-bar--mid' : 'source-card-bar--high';
+    const reg        = meses > 0 ? `${g.aparicoes}/${meses}` : '';
     return `
-      <div class="source-card${isSelected ? ' active' : ''}${grupoAtivo ? '' : ' source-card-disabled'}" data-source="${esc(f.pagador)}">
+      <div class="source-card${isSelected ? ' active' : ''}" data-grupo-id="${esc(g.grupo_id)}">
         <div class="source-card-header">
-          <span class="source-card-name" title="${esc(f.pagador)}">${esc(f.pagador)}</span>
-          <button class="source-card-toggle${grupoAtivo ? '' : ' source-card-toggle-off'}"
+          <span class="source-card-name" title="${esc(g.pagador)}">${esc(g.pagador)}</span>
+          <button class="source-card-toggle"
             data-action="toggle-grupo"
-            data-grupo-id="${esc(f.grupo_id || '')}"
-            data-pagador="${esc(f.pagador || '')}"
-            data-active="${grupoAtivo ? '0' : '1'}"
-            title="${grupoAtivo ? 'Desativar grupo' : 'Ativar grupo'}"
-          >${toggleLabel}</button>
+            data-grupo-id="${esc(g.grupo_id)}"
+            data-active="0"
+            title="Desativar grupo"
+          >Desativar</button>
         </div>
-        <span class="source-card-val">${fmtBRL(f.renda_base)}</span>
+        <span class="source-card-val">${fmtBRL(g.renda_base)}</span>
         <div class="source-card-meta">
-          <span class="source-card-regularidade">${f.regularidade ?? ''}</span>
+          <span class="source-card-regularidade">${reg}</span>
           <span class="cv-badge ${cvClass}" title="Variabilidade">${cv !== null ? cv + '%' : '?'}</span>
         </div>
         <div class="source-card-bar-wrap">
@@ -417,23 +363,18 @@ function renderSourceCards() {
       </div>`;
   }).join('');
 
-  // ── Render: cards de tipo de exclusão (um por tipo, somente filtro) ───────
-  // Total por tipo: soma de currentApuracao.excluidos agrupados pelo tipo canônico
   const totalPorTipo = {};
   const countPorTipo = {};
-  (currentApuracao?.excluidos || []).forEach(e => {
-    const tipo = _MOTIVO_TO_TIPO[e.motivo] || e.motivo || 'outro';
-    totalPorTipo[tipo] = (totalPorTipo[tipo] || 0) + Math.abs(e.valor || 0);
-  });
-  for (const f of sysExcluidos) {
-    const tipo = _MOTIVO_TO_TIPO[f.motivo_exclusao] || f.motivo_exclusao || 'outro';
+  sysExcluidos.forEach(g => {
+    const tipo = _MOTIVO_TO_TIPO[g.estado_efetivo] || g.estado_efetivo || 'outro';
+    const hist = g.valores_por_mes || {};
+    totalPorTipo[tipo] = (totalPorTipo[tipo] || 0) + Object.values(hist).reduce((a, v) => a + v, 0);
     countPorTipo[tipo] = (countPorTipo[tipo] || 0) + 1;
-  }
-  // Tipos presentes (preserva ordem de definição do TIPO_LABEL)
-  const tiposOrdem = ['circular','variancia','sem_historico','auto_transferencia','flag_usuario','duplicado_manual'];
+  });
+
+  const tiposOrdem   = ['circular','variancia','sem_historico','auto_transferencia','flag_usuario','duplicado_manual'];
   const tiposPresentes = tiposOrdem.filter(t => totalPorTipo[t] || countPorTipo[t]);
-  // Tipos extras não mapeados
-  const tiposExtras = [...new Set([...Object.keys(totalPorTipo), ...Object.keys(countPorTipo)])].filter(t => !tiposOrdem.includes(t));
+  const tiposExtras    = [...new Set(Object.keys(totalPorTipo).concat(Object.keys(countPorTipo)))].filter(t => !tiposOrdem.includes(t));
 
   const renderTipoCard = (tipo) => {
     const isSelected = activeTypeFilter === tipo;
@@ -451,20 +392,18 @@ function renderSourceCards() {
   };
 
   const htmlExcl = [...tiposPresentes, ...tiposExtras].map(renderTipoCard).join('');
-
   const separador = sysExcluidos.length > 0
     ? `<div class="excl-section-label">Excluídos pelo sistema</div>${htmlExcl}`
     : '';
 
   wrap.innerHTML = htmlAtivas + separador;
 
-  // ── Eventos: clique nas fontes ativas ─────────────────────────────────────
   wrap.querySelectorAll('.source-card:not([data-action="select-tipo"])').forEach(card => {
     card.addEventListener('click', e => {
       if (e.target.closest('[data-action="toggle-grupo"]')) return;
-      const src = card.dataset.source;
-      if (!src) return;
-      activeSource     = (activeSource === src) ? null : src;
+      const gid = card.dataset.grupoId;
+      if (!gid) return;
+      activeSource     = (activeSource === gid) ? null : gid;
       activeTypeFilter = null;
       renderSourceCards();
       renderFilterBar();
@@ -472,7 +411,6 @@ function renderSourceCards() {
     });
   });
 
-  // ── Eventos: clique nos cards de tipo ─────────────────────────────────────
   wrap.querySelectorAll('[data-action="select-tipo"]').forEach(card => {
     card.addEventListener('click', () => {
       const tipo       = card.dataset.tipo;
@@ -484,55 +422,25 @@ function renderSourceCards() {
     });
   });
 
-  // ── Eventos: toggle-grupo (fontes ativas) ─────────────────────────────────
   wrap.querySelectorAll('[data-action="toggle-grupo"]').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const grupo_id = btn.dataset.grupoId;
-      const pagador  = btn.dataset.pagador;
-      const active   = btn.dataset.active === '1';
-
-      if (currentSession?.meses) {
-        for (const lancs of Object.values(currentSession.meses)) {
-          for (const lanc of Object.values(lancs)) {
-            const s = lanc.state;
-            if ((s.valor ?? 0) < 0) continue;
-            if (_sourceMatches(s, pagador)) s.active = active;
-          }
-        }
-        renderSourceCards();
-      }
-
-      const fonte = knownFontes.find(f => f.grupo_id === grupo_id || f.pagador === pagador);
-      const display_cache = (!active && fonte) ? {
-        renda_base  : fonte.renda_base  ?? null,
-        cv_pct      : fonte.cv_pct      ?? null,
-        regularidade: fonte.regularidade ?? null,
-      } : null;
-
-      sendMutation('toggle_grupo', null, { grupo_id, active, display_cache });
+      if (!grupo_id) return;
+      sendMutation('toggle_grupo', null, { grupo_id, active: false });
     });
   });
 
-  // ── Ver mais / ver menos (somente para fontes ativas) ─────────────────────
-  wrap.parentNode.querySelector('.source-ver-mais-btn')?.remove();
   requestAnimationFrame(() => {
     const activeCards = [...wrap.querySelectorAll('.source-card:not([data-action="select-tipo"])')];
     if (activeCards.length === 0) return;
     wrap.parentNode.querySelector('.source-ver-mais-btn')?.remove();
-
     const firstTop = activeCards[0].getBoundingClientRect().top;
     const hasMultipleRows = activeCards.some(c => c.getBoundingClientRect().top > firstTop + 4);
-
-    if (!hasMultipleRows) {
-      wrap.style.maxHeight = '';
-      wrap.style.overflow  = '';
-      return;
-    }
-
+    if (!hasMultipleRows) { wrap.style.maxHeight = ''; wrap.style.overflow = ''; return; }
     if (!sourcesExpanded) {
       const firstRowCards = activeCards.filter(c => c.getBoundingClientRect().top <= firstTop + 4);
-      const last = firstRowCards[firstRowCards.length - 1];
+      const last    = firstRowCards[firstRowCards.length - 1];
       const wrapTop = wrap.getBoundingClientRect().top;
       wrap.style.maxHeight = (last.getBoundingClientRect().bottom - wrapTop) + 'px';
       wrap.style.overflow  = 'hidden';
@@ -540,14 +448,10 @@ function renderSourceCards() {
       wrap.style.maxHeight = '';
       wrap.style.overflow  = '';
     }
-
     const verMaisBtn = document.createElement('button');
     verMaisBtn.className   = 'source-ver-mais-btn';
     verMaisBtn.textContent = sourcesExpanded ? 'ver menos' : 'ver mais';
-    verMaisBtn.addEventListener('click', () => {
-      sourcesExpanded = !sourcesExpanded;
-      renderSourceCards();
-    });
+    verMaisBtn.addEventListener('click', () => { sourcesExpanded = !sourcesExpanded; renderSourceCards(); });
     wrap.parentNode.appendChild(verMaisBtn);
   });
 }
@@ -585,8 +489,9 @@ function renderFilterBar() {
     </span>`;
   }
   if (hasSource) {
-    html += `<span class="filter-crumb" title="${esc(activeSource)}">
-      <span class="filter-crumb-text">${esc(activeSource)}</span>
+    const sourceLabel = (currentApuracao?.grupos || []).find(g => g.grupo_id === activeSource)?.pagador || activeSource;
+    html += `<span class="filter-crumb" title="${esc(sourceLabel)}">
+      <span class="filter-crumb-text">${esc(sourceLabel)}</span>
       <button class="filter-crumb-x" data-clear="source" title="Remover filtro">×</button>
     </span>`;
   }
@@ -720,7 +625,6 @@ async function handleSessionMenuAction(action) {
         activeMonth      = null;
         activeSource     = null;
         activeTypeFilter = null;
-        knownFontes      = [];
         sourcesExpanded  = false;
         sessionEditorOpened.clear();
         showFormView();

@@ -31,7 +31,6 @@ let activeTypeFilter = null;  // tipo de exclusão selecionado ('circular', 'var
 let gruposActiveTab  = null;  // aba ativa na seção de grupos ('composicao', etc.)
 let sessionEditorOpened = new Set(); // meses cujo editor já foi aberto
 let mutationPending  = false; // bloqueia mutações simultâneas
-let knownFontes      = [];    // fontes acumuladas — persiste mesmo quando inativas na apuração
 let sourcesExpanded  = false; // estado de expansão do "ver mais" nas fontes de renda
 
 // ─── Estado do editor PDF ──────────────────────────────────────────────────────

@@ -238,7 +238,6 @@ function setupEvents() {
     currentLaudo    = null;
     activeMonth     = null;
     activeSource    = null;
-    knownFontes     = [];
     sourcesExpanded = false;
     sessionEditorOpened.clear();
     resetForm();
@@ -287,7 +286,6 @@ function setupEvents() {
       currentLaudo    = null;
       activeMonth     = null;
       activeSource    = null;
-      knownFontes     = [];
       sourcesExpanded = false;
       sessionEditorOpened.clear();
       showFormView();

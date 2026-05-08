@@ -124,23 +124,15 @@ function renderTransactions() {
   }
 
   if (activeSource) {
-    // Usa grupo_id como fonte de verdade quando o back o forneceu
-    const fonteAtiva = knownFontes.find(f => f.pagador === activeSource);
-    if (fonteAtiva?.grupo_id) {
-      lancs = lancs.filter(l => l.state.grupo_id === fonteAtiva.grupo_id);
-    } else {
-      lancs = lancs.filter(l => _sourceMatches(l.state, activeSource));
-    }
+    lancs = lancs.filter(l => l.state.grupo_id === activeSource);
   }
 
-  // ── Filtro por tipo de exclusão — usa grupo_id do back como fonte de verdade
   if (activeTypeFilter) {
     const grupoIdsDoTipo = new Set(
-      knownFontes
-        .filter(f => f.system_excluded &&
-          (_MOTIVO_TO_TIPO[f.motivo_exclusao] || f.motivo_exclusao) === activeTypeFilter)
-        .map(f => f.grupo_id)
-        .filter(Boolean)
+      (currentApuracao?.grupos || [])
+        .filter(g => g.estado_efetivo !== 'estavel' &&
+          (_MOTIVO_TO_TIPO[g.estado_efetivo] || g.estado_efetivo) === activeTypeFilter)
+        .map(g => g.grupo_id)
     );
     lancs = grupoIdsDoTipo.size > 0
       ? lancs.filter(l => grupoIdsDoTipo.has(l.state.grupo_id))
