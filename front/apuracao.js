@@ -365,7 +365,9 @@ function renderSourceCards() {
 
   wrap.innerHTML = knownFontes.map((f) => {
     const isSelected   = activeSource === f.pagador;
-    const grupoAtivo   = _grupoIsActive(f.pagador);
+    // Grupos excluídos pelo sistema têm lançamentos active=true na sessão
+    // (_grupoIsActive leria true), mas o cálculo os rejeitou — exibir como inativos.
+    const grupoAtivo   = f.system_excluded ? false : _grupoIsActive(f.pagador);
     const isSysExcl    = !!f.system_excluded;
     const barW         = Math.min(Math.max(f.participacao_pct || 0, 0), 100).toFixed(1);
     const toggleLabel  = grupoAtivo ? 'Desativar' : 'Ativar';
@@ -470,7 +472,7 @@ function renderSourceCards() {
       wrap.style.overflow  = '';
     }
 
-    const hasExcluded = knownFontes.some(f => f.system_excluded && !_grupoIsActive(f.pagador));
+    const hasExcluded = knownFontes.some(f => f.system_excluded || !_grupoIsActive(f.pagador));
     const verMaisBtn = document.createElement('button');
     verMaisBtn.className   = 'source-ver-mais-btn' + ((!sourcesExpanded && hasExcluded) ? ' has-excluded' : '');
     verMaisBtn.textContent = sourcesExpanded ? 'ver menos' : 'ver mais';
